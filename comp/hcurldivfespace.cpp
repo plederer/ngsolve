@@ -479,6 +479,8 @@ namespace ngcomp
     
     GGbubbles = flags.GetDefineFlag("GGbubbles");
 
+    sym_on_Alfeld = flags.GetDefineFlag("sym_on_Alfeld");
+
     discontinuous = flags.GetDefineFlag("discontinuous");
     uniform_order_facet = int(flags.GetNumFlag("orderfacet",order));
     uniform_order_inner = int(flags.GetNumFlag("orderinner",order));
@@ -537,9 +539,49 @@ namespace ngcomp
       "  Set order of inner nt-bubbles";
     docu.Arg("GGbubbles") = "bool = false\n"
       "  Add GG-bubbles for weak-symmetric formulation";
-     
+    docu.Arg("sym_on_Alfeld") = "bool = false\n"
+      "  Symmetric Hcd on local Alfeld split";
+
     return docu;
   }
+
+   std::map<ELEMENT_TYPE, IntegrationRule> HCurlDivFESpace::GetIntegrationRules(int bonus_intorder) const
+  {
+    IntegrationRule irtrig(ET_TRIG, 2*order+bonus_intorder);
+
+    IntegrationRule ir;
+
+    auto map1 = [](IntegrationPoint ip)
+    {
+      double x = ip(0), y = ip(1);
+      return IntegrationPoint(x+1./3*y, 1./3*y, 0, ip.Weight()/3);
+    };
+
+    auto map2 = [](IntegrationPoint ip)
+    {
+      double x = ip(0), y = ip(1);
+      return IntegrationPoint(1./3*x, y+1./3*x, 0, ip.Weight()/3);
+    };
+    
+    auto map3 = [](IntegrationPoint ip)
+    {
+      double x = ip(0), y = ip(1);
+      return IntegrationPoint(1.0/3+2.0/3*x-1.0/3*y, 1.0/3-1.0/3*x+2.0/3*y, 0, ip.Weight()/3);
+    };
+
+    
+    for (auto ip : irtrig)
+      {
+        ir += map1(ip);
+        ir += map2(ip);
+        ir += map3(ip);
+      }
+    
+    std::map<ELEMENT_TYPE, IntegrationRule> rules;
+    rules[ET_TRIG] = std::move(ir);
+    return rules;
+  }
+
 
   void HCurlDivFESpace :: Update()
   {
@@ -608,23 +650,41 @@ namespace ngcomp
       first_element_dof[i] = ndof;
       int oi = order_inner[i];
       int ot = order_trace[i];
-      
+      int ldof = 0;
+
       switch(ma->GetElType(ei))
       {
-        case ET_TRIG:
-          ndof += 3*(oi * (oi +1))/2;
+        case ET_TRIG:    
+          ldof += 3*(oi * (oi +1))/2;
           if (ot>-1)
-            ndof += (ot + 1) * (ot + 2) / 2;
+            ldof += (ot + 1) * (ot + 2) / 2;
 
           if (GGbubbles)
-            ndof += oi+1;
+            ldof += oi+1;
           
-                if(discontinuous)
-                {
-                  for (auto f : ma->GetElFacets(ei))
-                    ndof += first_facet_dof[f+1] - first_facet_dof[f];            
-                }
-                break;
+          if (!sym_on_Alfeld)
+            ndof += ldof;
+          else 
+          {
+            
+            // inner dofs on sub triangles
+            ndof += 3*ldof;
+            // inner dofs on inner edges
+            int of = order_facet[0]; // assumes constant facet order!
+            ndof += 3*(of+1);
+            if (discontinuous)
+              ndof += 3*(of+1);
+          }
+
+          if(discontinuous)
+          {
+            for (auto f : ma->GetElFacets(ei))
+              ndof += first_facet_dof[f+1] - first_facet_dof[f];            
+          }
+
+          break;
+
+          
         case ET_QUAD:
           ndof += (oi+1)*(oi+1);
           if (oi > 0)
@@ -862,7 +922,7 @@ namespace ngcomp
     Ngs_Element ngel = ma->GetElement(ei);  
     if (!DefinedOn(ngel)) return * new (lh) HCurlDivDummyFE<ET>();
     
-    auto * fe =  new (lh) HCurlDivFE<ET> (order, GGbubbles);
+    auto * fe =  new (lh) HCurlDivFE<ET> (order, GGbubbles, sym_on_Alfeld, discontinuous);
     fe->SetVertexNumbers (ngel.Vertices());
     int ii = 0;
     for(auto f : ngel.Facets())

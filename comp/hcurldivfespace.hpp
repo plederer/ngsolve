@@ -36,6 +36,9 @@ namespace ngcomp
     //bool curlbubbles;
     // GG bubbles
     bool GGbubbles;    
+
+    // symmetric Hcd on local Alfeld split
+    bool sym_on_Alfeld;
     
     int uniform_order_facet;
     int uniform_order_inner;
@@ -80,6 +83,8 @@ namespace ngcomp
     void GetDofNrs (ElementId ei, Array<int> & dnums) const override;
     
     virtual void UpdateCouplingDofArray() override;
+
+    std::map<ELEMENT_TYPE, IntegrationRule> GetIntegrationRules(int bonus_intorder=2) const;
     
   };
 

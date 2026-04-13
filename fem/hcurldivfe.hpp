@@ -150,15 +150,20 @@ namespace ngfem
     //bool curlbubbles;
     bool GGbubbles;
     //L2orthTet l2orth;
+
+    bool sym_on_Alfeld;
+    bool disc;
     
   public:          
-    T_HCurlDivFE (int aorder, bool aGGbubbles = false)
+    T_HCurlDivFE (int aorder, bool aGGbubbles = false, bool asym_on_Alfeld = false, bool adisc = false)
     {
       order = aorder;
       for (auto & of : order_facet) of = aorder;
       order_inner = aorder;
       order_trace = -1;
       GGbubbles = aGGbubbles;
+      sym_on_Alfeld = asym_on_Alfeld;
+      disc = adisc;
     }   
     
     using VertexOrientedFE<ET>::SetVertexNumbers;
@@ -731,26 +736,36 @@ namespace ngfem
       int ninner = 3 * ((order_inner +1) * (order_inner))/2; 
       order = max2(order, order_inner);
       
-      ndof += ninner;
-      if (order_trace > -1)
-	{
-	  ndof += (order_trace +1) * (order_trace+2)/2.0;
-	  order = max2(order, order_trace);
-	}
+      if (!sym_on_Alfeld)
+        ndof += ninner;
+      else
+      {
+        ndof += 3 * ninner;
+        ndof += 3 * (order_facet[0]+1);
+        if (disc)
+          ndof += 3 * (order_facet[0]+1);        
+      } 
 
-      if(GGbubbles)
-	{
-	  ndof += order_inner+1;
-	  order +=1;
-	}
+      if (order_trace > -1)
+      {
+        ndof += (order_trace +1) * (order_trace+2)/2.0;
+        order = max2(order, order_trace);
+      }
+
+          if(GGbubbles)
+      {
+        ndof += order_inner+1;
+        order +=1;
+      }
       
     }
     
    template <typename Tx, typename TFA> 
-    void T_CalcShape (TIP<2,Tx> ip/*AutoDiffDiff<2> hx[2]*/, TFA & shape) const
+    void T_CalcShape (TIP<2,Tx> ip, TFA & shape) const
     {
       auto x = ip.x, y = ip.y;
       Tx ddlami[3] ={ x, y, 1-x-y };
+      
       
       int ii = 0;
       
@@ -761,92 +776,235 @@ namespace ngfem
 
       ArrayMem<Tx,20> ha(maxorder_facet+1);
       ArrayMem<Tx,20> v(oi+1), u(oi+1);
-
-      for (int i = 0; i < 3; i++)
+      if (!sym_on_Alfeld)
+      {
+        for (int i = 0; i < 3; i++)
+          {
+              IVec<2> e = ET_trait<ET_TRIG>::GetEdgeSort (i, vnums);	  	  
+              Tx ls = ddlami[e[0]], le = ddlami[e[1]];
+        
+              IntLegNoBubble::EvalMult (maxorder_facet, le-ls, 0.25*le*ls, ha);
+      
+              for (int l = 0; l <= order_facet[i]; l++)	    
+                shape[ii++] = Sigma_gradv(ha[l]);	 
+          }
+        
+        Tx ls = ddlami[0];
+        Tx le = ddlami[1];
+        Tx lt = ddlami[2];
+        
+        //if trace order is not equal -1
+        if (ot>-1)
         {
-            IVec<2> e = ET_trait<ET_TRIG>::GetEdgeSort (i, vnums);	  	  
-            Tx ls = ddlami[e[0]], le = ddlami[e[1]];
-	  	 
-            IntLegNoBubble::EvalMult (maxorder_facet, le-ls, 0.25*le*ls, ha);
-	  
-            for (int l = 0; l <= order_facet[i]; l++)	    
-              shape[ii++] = Sigma_gradv(ha[l]);	 
+          LegendrePolynomial::Eval(ot, 2*lt-1, v);
+          for (int i = 0; i <= ot; i++)
+            shape[ii++] = type4(le, ls, v[i]);
+
+          IntLegNoBubble::EvalMult (ot, le-lt, 0.25*le*lt, u);
+          LegendrePolynomial::EvalMult(ot, 2*ls-1, ls, v);
+          for(int i = 0; i <= ot-1; i++)
+              for(int j = 0; j+i <= ot-1; j++)       
+              shape[ii++] = Sigma_gradu_v(u[i],v[j]);	  		  	    
+        }
+                    
+        IntLegNoBubble::EvalMult (oi, le-lt, 0.25*le*lt, u);
+        LegendrePolynomial::EvalMult(oi, 2*ls-1, ls, v);
+        
+        for(int i = 0; i <= oi-1; i++)
+        {
+          for(int j = 0; j+i <= oi-1; j++)
+          {	  
+            shape[ii++] = Curlgraduv_graducurlv(u[i],v[j]);	  	  
+          }	
         }
       
-      Tx ls = ddlami[0];
-      Tx le = ddlami[1];
-      Tx lt = ddlami[2];
-      
-      //if trace order is not equal -1
-      if (ot>-1)
-      {
-        LegendrePolynomial::Eval(ot, 2*lt-1, v);
-        for (int i = 0; i <= ot; i++)
-          shape[ii++] = type4(le, ls, v[i]);
-
-        IntLegNoBubble::EvalMult (ot, le-lt, 0.25*le*lt, u);
-        LegendrePolynomial::EvalMult(ot, 2*ls-1, ls, v);
-        for(int i = 0; i <= ot-1; i++)
-            for(int j = 0; j+i <= ot-1; j++)       
-            shape[ii++] = Sigma_gradu_v(u[i],v[j]);	  		  	    
-      }
-                  
-      IntLegNoBubble::EvalMult (oi, le-lt, 0.25*le*lt, u);
-      LegendrePolynomial::EvalMult(oi, 2*ls-1, ls, v);
-      
-      for(int i = 0; i <= oi-1; i++)
-      {
-        for(int j = 0; j+i <= oi-1; j++)
-        {	  
-          shape[ii++] = Curlgraduv_graducurlv(u[i],v[j]);	  	  
-        }	
-      }
-     
-      IntLegNoBubble::EvalMult (oi, le-ls, 0.25*le*ls, u);
-      LegendrePolynomial::EvalMult(oi, 2*lt-1, lt, v);
-      
-      for(int i = 0; i <= oi-1; i++)
-      {
-        for(int j = 0; j+i <= oi-1; j++)
-        {
-          shape[ii++] = Sigma_gradv(u[i]*v[j]); //divfree!
-          shape[ii++] = Curlgraduv_graducurlv(u[i],v[j]); 	 
-        }	
-      }
-
-      
-      if(GGbubbles)
-      {
-        /*
         IntLegNoBubble::EvalMult (oi, le-ls, 0.25*le*ls, u);
         LegendrePolynomial::EvalMult(oi, 2*lt-1, lt, v);
-
-        //in 2 dimensions u[i]*v[oi-1-i] should be a H1_0 bubble
-          
+        
         for(int i = 0; i <= oi-1; i++)
+        {
+          for(int j = 0; j+i <= oi-1; j++)
           {
-            shape[ii++] = CurlBubble2D(u[i]*v[oi-1-i]);
-          }
-        */
-        //Vector<AutoDiffDiff<2, T> >  l2shape( (oi+1)*(oi+2) / 2 );
-        
-        Vector<Tx>  l2shape( (oi+1)*(oi+2) / 2);
-        DubinerBasis::Eval ( oi , ddlami[0], ddlami[1], l2shape);
+            shape[ii++] = Sigma_gradv(u[i]*v[j]); //divfree!
+            shape[ii++] = Curlgraduv_graducurlv(u[i],v[j]); 	 
+          }	
+        }
 
-        Vector<Tx>  S(oi+1);
+        
+        if(GGbubbles)
+        {
+          /*
+          IntLegNoBubble::EvalMult (oi, le-ls, 0.25*le*ls, u);
+          LegendrePolynomial::EvalMult(oi, 2*lt-1, lt, v);
 
-        S(0) = l2shape(oi);	    
-        for ( int i = 1; i<oi+1; i++)
-            S(i) = l2shape((i+1)*oi-(i-1)*(i)/2);
-        
-        Tx b = ddlami[0]*ddlami[1]*ddlami[2];
-        
-        for (int i=0; i<oi+1;i++)
-          {	     
-            shape[ii++] = GGbubble(S(i), b);
-          }
-      }
+          //in 2 dimensions u[i]*v[oi-1-i] should be a H1_0 bubble
             
+          for(int i = 0; i <= oi-1; i++)
+            {
+              shape[ii++] = CurlBubble2D(u[i]*v[oi-1-i]);
+            }
+          */
+          //Vector<AutoDiffDiff<2, T> >  l2shape( (oi+1)*(oi+2) / 2 );
+          
+          Vector<Tx>  l2shape( (oi+1)*(oi+2) / 2);
+          DubinerBasis::Eval ( oi , ddlami[0], ddlami[1], l2shape);
+
+          Vector<Tx>  S(oi+1);
+
+          S(0) = l2shape(oi);	    
+          for ( int i = 1; i<oi+1; i++)
+              S(i) = l2shape((i+1)*oi-(i-1)*(i)/2);
+          
+          Tx b = ddlami[0]*ddlami[1]*ddlami[2];
+          
+          for (int i=0; i<oi+1;i++)
+            {	     
+              shape[ii++] = GGbubble(S(i), b);
+            }
+        }
+      }
+      else
+      {
+        // copied from JKMspace.hpp
+        if constexpr (std::is_same<Tx,AutoDiffDiff<2, double>>())   // no SIMD
+        {
+          typedef AutoDiff<2, double> T;
+          T x{ip.x}, y{ip.y};
+          T lam[3] = { x, y, 1-x-y };
+          // cout << "in no simd version" << endl;
+          
+          // cout << "lam: " << lam[0] << " " << lam[1] << " " << lam[2] << endl;
+          // cout << "typedef: " << typeid(lam[0]).name() << endl;
+          int minlam = 0;
+          if (lam[1].Value() < lam[minlam].Value()) minlam = 1;
+          if (lam[2].Value() < lam[minlam].Value()) minlam = 2;
+          
+          int v0 = (minlam + 1) % 3;
+          int v1 = (minlam + 2) % 3;
+          int vop = 3-v0-v1;
+          int edgenr = -1;
+          switch (vop)
+            {
+            case 0: edgenr = 1; break;
+            case 1: edgenr = 0; break;
+            default: edgenr = 2; break;
+            }
+
+          // int v0orig = v0;
+          if (vnums[v0] > vnums[v1]) { Swap(v0,v1); }
+
+          
+          Tx lamloc[3] = { ddlami[v0]-ddlami[minlam],
+                            ddlami[v1]-ddlami[minlam],
+                            ddlami[minlam]*3 };
+          
+          // set to 0:
+          for (int i = 0; i < ndof; i++)
+            shape[i] = sym_Sigma_gradv(Tx(0.)); 
+
+          Tx ls = lamloc[0], le = lamloc[1], lt = lamloc[2];
+        
+          IntLegNoBubble::EvalMult (maxorder_facet, le-ls, 0.25*le*ls, ha);
+      
+          // 
+          for (int l = 0; l <= maxorder_facet; l++)	    
+          {
+            shape[(maxorder_facet+1)*edgenr + ii] = Sigma_gradv(ha[l]);	
+            // shape[(maxorder_facet+1)*edgenr + ii] = dev_Dl1_x_Cl2_v(ls, le, Tx(1.0));	
+            ii+=1;
+          }
+          
+          ii = (maxorder_facet+1)*3;
+
+          if (!disc)
+              {
+                for (int i = 0; i < 3; i++)
+                  {
+                    
+                      if (v0 == i)
+                        {
+                          // double sign = (v0>vop) ? 1 : -1;
+                          le = lamloc[0];
+                          ls = lamloc[2];
+
+                          IntLegNoBubble::EvalMult (maxorder_facet, le-ls, 0.25*le*ls, ha);
+                          // shape[ii++] = dev_Dl1_x_Cl2_v(le, ls, lamloc[2]);
+                          for (int l = 0; l <= maxorder_facet; l++)	    
+                            shape[ii++] = Sigma_gradv(ha[l]);	
+                                      
+                        }
+                      else if (v1 == i)
+                        {
+                          // double sign = (v1>vop) ? 1 : -1;
+                          le = lamloc[1];
+                          ls = lamloc[2];
+                          // shape[ii++] = dev_Dl1_x_Cl2_v(le, ls, lamloc[2]);
+                          IntLegNoBubble::EvalMult (maxorder_facet, le-ls, 0.25*le*ls, ha);
+
+                          for (int l = 0; l <= maxorder_facet; l++)	    
+                            shape[ii++] = Sigma_gradv(ha[l]);	
+                        }
+                      else
+                        ii+=maxorder_facet+1;
+                    
+                              
+                  }
+              }
+          else
+              {
+                le = lamloc[0];
+                ls = lamloc[2];
+                lt = lamloc[1];
+
+                IntLegNoBubble::EvalMult (maxorder_facet, le-ls, 0.25*le*ls, v);
+                IntLegNoBubble::EvalMult (maxorder_facet, lt-ls, 0.25*lt*ls, u);
+                
+                for (int l = 0; l <= maxorder_facet; l++)	 
+                {   
+                  shape[2*(maxorder_facet+1)*edgenr + ii] = Sigma_gradv(v[l]);	
+                  shape[2*(maxorder_facet+1)*edgenr + ii+1] = Sigma_gradv(u[l]);	
+                  ii+=2;
+                } 
+              
+              ii = (maxorder_facet+1)*9;
+
+              } 
+
+          
+          // inner functions
+          ls = lamloc[2];
+          le = lamloc[1];
+          lt = lamloc[0];
+
+          int ninner = 3 * ((oi +1) * (oi))/2; 
+
+          IntLegNoBubble::EvalMult (oi, le-lt, 0.25*le*lt, u);
+          LegendrePolynomial::EvalMult(oi, 2*ls-1, ls, v);
+        
+          for(int i = 0; i <= oi-1; i++)
+          {
+            for(int j = 0; j+i <= oi-1; j++)
+            {	  
+              shape[ninner*minlam + ii] = Curlgraduv_graducurlv(u[i],v[j]);	  	  
+              ii+=1;
+            }	
+          }
+        
+          IntLegNoBubble::EvalMult (oi, le-ls, 0.25*le*ls, u);
+          LegendrePolynomial::EvalMult(oi, 2*lt-1, lt, v);
+          
+          for(int i = 0; i <= oi-1; i++)
+          {
+            for(int j = 0; j+i <= oi-1; j++)
+            {
+              shape[ninner*minlam + ii] = Sigma_gradv(u[i]*v[j]); //divfree!
+              shape[ninner*minlam + ii+1] = Curlgraduv_graducurlv(u[i],v[j]); 	
+              ii+=2; 
+            }	
+          }
+          // getchar();
+        }
+      }   
     };
 
     template <typename MIP, typename TFA>

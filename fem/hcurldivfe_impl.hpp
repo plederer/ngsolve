@@ -12,6 +12,49 @@
 
 namespace ngfem
 {
+
+  /* ############### old style edge basis function ############### */
+  /* dev ( v times grad(l1) o-times Curl(l2) ) */
+  template <int D, typename T>  class T_dev_Dl1_x_Cl2_v;
+  template <typename T>  class T_dev_Dl1_x_Cl2_v<2,T>
+  {
+    AutoDiffDiff<2,T> l1;
+    AutoDiffDiff<2,T> l2;
+    AutoDiffDiff<2,T> v;
+  public:
+    T_dev_Dl1_x_Cl2_v  (AutoDiffDiff<2,T> al1, AutoDiffDiff<2,T> al2, AutoDiffDiff<2,T> av) : l1(al1), l2(al2), v(av){ ; }
+    
+    Vec<4,T> Shape() {
+      auto trace = (-  l2.DValue(1)*l1.DValue(0) + l2.DValue(0)*l1.DValue(1)) / 2.0;
+      auto offdiag = (l2.DValue(0)*l1.DValue(0) - l2.DValue(1)*l1.DValue(1)) / 2.0;
+      
+      // return Vec<4,T>  (v.Value() * (-l2.DValue(1)*l1.DValue(0) - trace),
+		  //     v.Value() *l2.DValue(0)*l1.DValue(0),
+		  //    - v.Value() *l2.DValue(1)*l1.DValue(1),
+		  //    v.Value() * (l2.DValue(0)*l1.DValue(1) - trace)
+		  //    );
+         return Vec<4,T>  (v.Value() * (-l2.DValue(1)*l1.DValue(0) - trace),
+		      v.Value() *offdiag,
+		      v.Value() *offdiag,
+		     v.Value() * (l2.DValue(0)*l1.DValue(1) - trace)
+		     );
+
+    }
+
+    Vec<2,T> DivShape()
+    {      
+      return Vec<2,T> (0.0,0.0);     
+    }
+
+    Vec<2,T> CurlShape()
+    {      
+      return Vec<2,T> (0.0,0.0);     
+    }
+  };
+
+  template <int D, typename T>
+  auto dev_Dl1_x_Cl2_v (AutoDiffDiff<D,T> al1, AutoDiffDiff<D,T> al2, AutoDiffDiff<D,T> av) { return T_dev_Dl1_x_Cl2_v<D,T>(al1, al2, av); }
+
   /* ############### edge basis functions - div-free ############### */
   /* sigma(grad v) = Curl(grad v), where Curl is the 1D to 2D curl operator */
   template <int D, typename T>  class T_Sigma_gradv;
@@ -40,6 +83,40 @@ namespace ngfem
 
   template <int D, typename T>
   auto Sigma_gradv (AutoDiffDiff<D,T> av) { return T_Sigma_gradv<D,T>(av); }
+
+
+
+
+
+  /* ############### edge basis functions - div-free ############### */
+  /* sym(Curl(grad v)), where Curl is the 1D to 2D curl operator */
+  template <int D, typename T>  class T_sym_Sigma_gradv;
+  template <typename T>  class T_sym_Sigma_gradv<2,T>
+  {
+    AutoDiffDiff<2,T> v;
+  public:
+    T_sym_Sigma_gradv  (AutoDiffDiff<2,T> av) : v(av){ ; }
+    
+    Vec<4,T> Shape() {
+      return Vec<4,T> (-v.DDValue(0,1), 0.5 * (v.DDValue(0,0) - v.DDValue(1,1)),
+		     0.5 * (v.DDValue(0,0) - v.DDValue(1,1)),v.DDValue(0,1)
+		     );
+    }
+
+    Vec<2,T> DivShape()
+    {      
+      throw Exception("DivShape not implemented for T_sym_Sigma_gradv");
+    }
+
+    Vec<2,T> CurlShape()
+    {      
+      throw Exception("CurlShape not implemented for T_sym_Sigma_gradv");
+    }
+  };
+
+  template <int D, typename T>
+  auto sym_Sigma_gradv (AutoDiffDiff<D,T> av) { return T_sym_Sigma_gradv<D,T>(av); }
+
 
   /* ############### div-free basis function WITH trace ############### */
   /* Curl(grad(u) v) = Curl(grad(u)) v + grad(u) o-tiimes Curl(v) */
@@ -205,6 +282,45 @@ namespace ngfem
 
   template <int D, typename T>
   auto Curlgraduv_graducurlv (AutoDiffDiff<D,T> au, AutoDiffDiff<D,T> av) { return T_Curlgraduv_graducurlv<D,T>(au, av); }
+
+  /* ############### Type 2 - inner basis functions - NOT div-free ############### */
+  /* Curl(grad(u)) * v - grad(u) * Curl(v) */
+  template <int D, typename T>  class T_sym_Curlgraduv_graducurlv;
+  template <typename T>  class T_sym_Curlgraduv_graducurlv<2,T>
+  {
+    AutoDiffDiff<2,T> u;
+    AutoDiffDiff<2,T> v;
+  public:
+    T_sym_Curlgraduv_graducurlv  (AutoDiffDiff<2,T> au, AutoDiffDiff<2,T> av) : u(au), v(av){ ; }
+
+    Vec<4,T> Shape() {
+
+      auto trace = (v.DValue(1)*u.DValue(0) -  v.DValue(0)*u.DValue(1)  )/2.0;
+      auto offdiag = 0.5 * ((u.DDValue(0,0) * v.Value() - v.DValue(0)*u.DValue(0)) + (-u.DDValue(1,1) * v.Value() + v.DValue(1)*u.DValue(1)) );
+
+
+      return Vec<4,T> (-u.DDValue(1,0) * v.Value()  +  v.DValue(1)*u.DValue(0) - trace,
+		     offdiag,
+		     offdiag,
+		     u.DDValue(0,1) * v.Value() -  v.DValue(0)*u.DValue(1) - trace
+		     );
+    }
+
+    Vec<2,T> DivShape()
+    {            
+      throw Exception("DivShape not implemented for T_sym_Curlgraduv_graducurlv   ");
+    }
+
+    Vec<2,T> CurlShape()
+    {
+      throw Exception("not implemented for T_sym_Curlgraduv_graducurlv");    
+    }
+    
+  };
+
+  template <int D, typename T>
+  auto sym_Curlgraduv_graducurlv (AutoDiffDiff<D,T> au, AutoDiffDiff<D,T> av) { return T_sym_Curlgraduv_graducurlv<D,T>(au, av); }
+
 
   /* ############### Type 3 - inner basis functions - div-free ############### */
   /*  Curl( [grad(l1) l2 - l1 grad(l2)] * v ) */
