@@ -1579,7 +1579,9 @@ component : int
 
   ExportFESpace<HDivDivFESpace> (m, "HDivDiv");
   
-  ExportFESpace<HCurlDivFESpace> (m, "HCurlDiv");
+  ExportFESpace<HCurlDivFESpace> (m, "HCurlDiv")
+  .def("GetIntegrationRules", &HCurlDivFESpace::GetIntegrationRules,
+         py::arg("bonus_intorder")=2);
 
   ExportFESpace<HCurlCurlFESpace> (m, "HCurlCurl");
   

@@ -152,10 +152,9 @@ namespace ngfem
     //L2orthTet l2orth;
 
     bool sym_on_Alfeld;
-    bool disc;
     
   public:          
-    T_HCurlDivFE (int aorder, bool aGGbubbles = false, bool asym_on_Alfeld = false, bool adisc = false)
+    T_HCurlDivFE (int aorder, bool aGGbubbles = false, bool asym_on_Alfeld = false)
     {
       order = aorder;
       for (auto & of : order_facet) of = aorder;
@@ -163,7 +162,6 @@ namespace ngfem
       order_trace = -1;
       GGbubbles = aGGbubbles;
       sym_on_Alfeld = asym_on_Alfeld;
-      disc = adisc;
     }   
     
     using VertexOrientedFE<ET>::SetVertexNumbers;
@@ -733,17 +731,28 @@ namespace ngfem
         ndof += order_facet[i]+1;
         order = max2(order, order_facet[i]);
       }      
-      int ninner = 3 * ((order_inner +1) * (order_inner))/2; 
+      int ninner = 3 * ((order_inner +1) * (order_inner))/2.0; 
       order = max2(order, order_inner);
       
       if (!sym_on_Alfeld)
         ndof += ninner;
       else
       {
-        ndof += 3 * ninner;
-        ndof += 3 * (order_facet[0]+1);
-        if (disc)
-          ndof += 3 * (order_facet[0]+1);        
+        ndof = 3*(order_facet[0]+1);  
+
+        // nn-functions with zero nt-components times polynomials
+        int nn_inner = (order_inner+1)*(order_inner+2)/2.0;
+        int nt_inner = (order_inner)*(order_inner+1)/2.0;
+        ndof += 3 * nn_inner;
+        ndof += 3 * nt_inner; 
+
+        // ndof += 3 * ninner;
+        // ndof += 3; //3 * (order_facet[0]+1);
+        // if (disc)
+        //   ndof += 3 * (order_facet[0]+1);    
+        // cout << "ndof = " << ndof << endl;
+        // cout << "ninner" << ninner << endl; 
+        // cout << "order_inner" << order_inner << endl;
       } 
 
       if (order_trace > -1)
@@ -776,6 +785,8 @@ namespace ngfem
 
       ArrayMem<Tx,20> ha(maxorder_facet+1);
       ArrayMem<Tx,20> v(oi+1), u(oi+1);
+      ArrayMem<Tx,20> dub((oi+1)*(oi+2)/2.0); 
+
       if (!sym_on_Alfeld)
       {
         for (int i = 0; i < 3; i++)
@@ -904,104 +915,150 @@ namespace ngfem
 
           Tx ls = lamloc[0], le = lamloc[1], lt = lamloc[2];
         
-          IntLegNoBubble::EvalMult (maxorder_facet, le-ls, 0.25*le*ls, ha);
+          // IntLegNoBubble::EvalMult (maxorder_facet, le-ls, 0.25*le*ls, ha);
+          LegendrePolynomial::Eval(maxorder_facet, le-ls, ha);
       
           // 
           for (int l = 0; l <= maxorder_facet; l++)	    
           {
-            shape[(maxorder_facet+1)*edgenr + ii] = Sigma_gradv(ha[l]);	
-            // shape[(maxorder_facet+1)*edgenr + ii] = dev_Dl1_x_Cl2_v(ls, le, Tx(1.0));	
+            // shape[(maxorder_facet+1)*edgenr + ii] = Sigma_gradv(ha[l]);	
+            shape[(maxorder_facet+1)*edgenr + ii] = sym_dev_Dl1_x_Cl2_v(lt, lt, ha[l]);	
             ii+=1;
           }
-          
+                    
           ii = (maxorder_facet+1)*3;
 
-          if (!disc)
+          
+
+          if (true)
               {
-                for (int i = 0; i < 3; i++)
-                  {
+                // ls = lamloc[0];
+                // lt = lamloc[2];
+                // le = lamloc[1];
+
+                DubinerBasis::Eval (oi, ls, le, dub);
+
+
+                // IntLegNoBubble::EvalMult (maxorder_facet, le-ls, 0.25*le*ls, v);
+                // IntLegNoBubble::EvalMult (maxorder_facet, lt-ls, 0.25*lt*ls, u);
+                
+                int nn_inner = (oi+1)*(oi+2)/2.0;
+                int nt_inner = (oi)*(oi+1)/2.0;
+                int ninner = nn_inner + nt_inner ; //+ (oi+1)*(oi+2)/2.0;
+
+                for (int l = 0; l < nn_inner; l++)	 
+                {   
+                  shape[ninner*edgenr + ii] = sym_dev_Dl1_x_Cl0_minus_Dl2_x_Cl0_v(lt,lt,lt,dub[l]);
+                  ii+=1;
+                } 
+                
+                DubinerBasis::Eval (oi-1, ls, le, dub);
+
+                for (int l = 0; l < nt_inner; l++)	 
+                {   
+                  shape[ninner*edgenr + ii] = sym_dev_Dl1_x_Cl2_v(lt, lt, lt*dub[l]);
+                  ii+=1;
+                } 
+
+
+
+              // ii += (oi+1)*(oi+2)/2.0; //(maxorder_facet+1)*9;
+
+                // for (int i = 0; i < 3; i++)
+                //   {
                     
-                      if (v0 == i)
-                        {
-                          // double sign = (v0>vop) ? 1 : -1;
-                          le = lamloc[0];
-                          ls = lamloc[2];
+                //       if (v0 == i)
+                //         {
+                //           // double sign = (v0>vop) ? 1 : -1;
+                //           le = lamloc[0];
+                //           ls = lamloc[2];
 
-                          IntLegNoBubble::EvalMult (maxorder_facet, le-ls, 0.25*le*ls, ha);
-                          // shape[ii++] = dev_Dl1_x_Cl2_v(le, ls, lamloc[2]);
-                          for (int l = 0; l <= maxorder_facet; l++)	    
-                            shape[ii++] = Sigma_gradv(ha[l]);	
+                //           IntLegNoBubble::EvalMult (maxorder_facet, le-ls, 0.25*le*ls, ha);
+                //           // shape[ii++] = dev_Dl1_x_Cl2_v(le, ls, lamloc[2]);
+                //           for (int l = 0; l <= maxorder_facet; l++)	    
+                //             shape[ii++] = Sigma_gradv(ha[l]);	
                                       
-                        }
-                      else if (v1 == i)
-                        {
-                          // double sign = (v1>vop) ? 1 : -1;
-                          le = lamloc[1];
-                          ls = lamloc[2];
-                          // shape[ii++] = dev_Dl1_x_Cl2_v(le, ls, lamloc[2]);
-                          IntLegNoBubble::EvalMult (maxorder_facet, le-ls, 0.25*le*ls, ha);
+                //         }
+                //       else if (v1 == i)
+                //         {
+                //           // double sign = (v1>vop) ? 1 : -1;
+                //           le = lamloc[1];
+                //           ls = lamloc[2];
+                //           // shape[ii++] = dev_Dl1_x_Cl2_v(le, ls, lamloc[2]);
+                //           IntLegNoBubble::EvalMult (maxorder_facet, le-ls, 0.25*le*ls, ha);
 
-                          for (int l = 0; l <= maxorder_facet; l++)	    
-                            shape[ii++] = Sigma_gradv(ha[l]);	
-                        }
-                      else
-                        ii+=maxorder_facet+1;
+                //           for (int l = 0; l <= maxorder_facet; l++)	    
+                //             shape[ii++] = Sigma_gradv(ha[l]);	
+                //         }
+                //       else
+                //         ii+=maxorder_facet+1;
                     
                               
-                  }
+                //   }
               }
-          else
-              {
-                le = lamloc[0];
-                ls = lamloc[2];
-                lt = lamloc[1];
+          // else
+          //     {
+          //       le = lamloc[0];
+          //       ls = lamloc[2];
+          //       lt = lamloc[1];
 
-                IntLegNoBubble::EvalMult (maxorder_facet, le-ls, 0.25*le*ls, v);
-                IntLegNoBubble::EvalMult (maxorder_facet, lt-ls, 0.25*lt*ls, u);
+          //       IntLegNoBubble::EvalMult (maxorder_facet, le-ls, 0.25*le*ls, v);
+          //       IntLegNoBubble::EvalMult (maxorder_facet, lt-ls, 0.25*lt*ls, u);
                 
-                for (int l = 0; l <= maxorder_facet; l++)	 
-                {   
-                  shape[2*(maxorder_facet+1)*edgenr + ii] = Sigma_gradv(v[l]);	
-                  shape[2*(maxorder_facet+1)*edgenr + ii+1] = Sigma_gradv(u[l]);	
-                  ii+=2;
-                } 
+          //       for (int l = 0; l <= maxorder_facet; l++)	 
+          //       {   
+          //         shape[2*(maxorder_facet+1)*edgenr + ii] = Sigma_gradv(v[l]);	
+          //         shape[2*(maxorder_facet+1)*edgenr + ii+1] = Sigma_gradv(u[l]);	
+          //         ii+=2;
+          //       } 
               
-              ii = (maxorder_facet+1)*9;
+          //       // for (int l = 0; l <= maxorder_facet; l++)	 
+          //       // {   
+          //         // shape[2*(maxorder_facet+1)*edgenr + ii] = sym_dev_Dl1_x_Cl0_minus_Dl2_x_Cl0_v(ls,le,lt,Tx(1.0));
+          //         // shape[2*(maxorder_facet+1)*edgenr + ii+1] = sym_dev_Dl1_x_Cl0_minus_Dl2_x_Cl0_v(ls,le,lt,ls);
+          //         // shape[2*(maxorder_facet+1)*edgenr + ii] = sym_dev_Dl1_x_Cl0_minus_Dl2_x_Cl0_v(ls,le,lt,Tx(1.0));
+          //         // shape[2*(maxorder_facet+1)*edgenr + ii+1] = sym_dev_Dl1_x_Cl0_minus_Dl2_x_Cl0_v(ls,le,lt,ls);
+          //         // shape[2*(maxorder_facet+1)*edgenr + ii+1] = sym_dev_Dl1_x_Cl2_v(ls, le, u[l+1]) - sym_dev_Dl1_x_Cl2_v(lt, le, u[l+1]);		
+                  
+          //       //   ii+=2;
+          //       // } 
+                
+          //     ii = (maxorder_facet+1)*9;
 
-              } 
+          //     } 
 
           
           // inner functions
-          ls = lamloc[2];
-          le = lamloc[1];
-          lt = lamloc[0];
+          // ls = lamloc[2];
+          // le = lamloc[1];
+          // lt = lamloc[0];
 
-          int ninner = 3 * ((oi +1) * (oi))/2; 
+          // int ninner = 3 * ((oi +1) * (oi))/2; 
 
-          IntLegNoBubble::EvalMult (oi, le-lt, 0.25*le*lt, u);
-          LegendrePolynomial::EvalMult(oi, 2*ls-1, ls, v);
+          // IntLegNoBubble::EvalMult (oi, le-lt, 0.25*le*lt, u);
+          // LegendrePolynomial::EvalMult(oi, 2*ls-1, ls, v);
         
-          for(int i = 0; i <= oi-1; i++)
-          {
-            for(int j = 0; j+i <= oi-1; j++)
-            {	  
-              shape[ninner*minlam + ii] = Curlgraduv_graducurlv(u[i],v[j]);	  	  
-              ii+=1;
-            }	
-          }
+          // for(int i = 0; i <= oi-1; i++)
+          // {
+          //   for(int j = 0; j+i <= oi-1; j++)
+          //   {	  
+          //     shape[ninner*minlam + ii] = Curlgraduv_graducurlv(u[i],v[j]);	  	  
+          //     ii+=1;
+          //   }	
+          // }
         
-          IntLegNoBubble::EvalMult (oi, le-ls, 0.25*le*ls, u);
-          LegendrePolynomial::EvalMult(oi, 2*lt-1, lt, v);
+          // IntLegNoBubble::EvalMult (oi, le-ls, 0.25*le*ls, u);
+          // LegendrePolynomial::EvalMult(oi, 2*lt-1, lt, v);
           
-          for(int i = 0; i <= oi-1; i++)
-          {
-            for(int j = 0; j+i <= oi-1; j++)
-            {
-              shape[ninner*minlam + ii] = Sigma_gradv(u[i]*v[j]); //divfree!
-              shape[ninner*minlam + ii+1] = Curlgraduv_graducurlv(u[i],v[j]); 	
-              ii+=2; 
-            }	
-          }
+          // for(int i = 0; i <= oi-1; i++)
+          // {
+          //   for(int j = 0; j+i <= oi-1; j++)
+          //   {
+          //     shape[ninner*minlam + ii] = Sigma_gradv(u[i]*v[j]); //divfree!
+          //     shape[ninner*minlam + ii+1] = Curlgraduv_graducurlv(u[i],v[j]); 	
+          //     ii+=2; 
+          //   }	
+          // }
           // getchar();
         }
       }   

@@ -14,30 +14,50 @@ namespace ngfem
 {
 
   /* ############### old style edge basis function ############### */
-  /* dev ( v times grad(l1) o-times Curl(l2) ) */
-  template <int D, typename T>  class T_dev_Dl1_x_Cl2_v;
-  template <typename T>  class T_dev_Dl1_x_Cl2_v<2,T>
+  /* sym_dev ( v times grad(l1) o-times Curl(l2) ) */
+  template <int D, typename T>  class T_sym_dev_Dl1_x_Cl2_v;
+  template <typename T>  class T_sym_dev_Dl1_x_Cl2_v<2,T>
   {
     AutoDiffDiff<2,T> l1;
     AutoDiffDiff<2,T> l2;
     AutoDiffDiff<2,T> v;
   public:
-    T_dev_Dl1_x_Cl2_v  (AutoDiffDiff<2,T> al1, AutoDiffDiff<2,T> al2, AutoDiffDiff<2,T> av) : l1(al1), l2(al2), v(av){ ; }
+    T_sym_dev_Dl1_x_Cl2_v  (AutoDiffDiff<2,T> al1, AutoDiffDiff<2,T> al2, AutoDiffDiff<2,T> av) : l1(al1), l2(al2), v(av){ ; }
     
     Vec<4,T> Shape() {
       auto trace = (-  l2.DValue(1)*l1.DValue(0) + l2.DValue(0)*l1.DValue(1)) / 2.0;
       auto offdiag = (l2.DValue(0)*l1.DValue(0) - l2.DValue(1)*l1.DValue(1)) / 2.0;
       
-      // return Vec<4,T>  (v.Value() * (-l2.DValue(1)*l1.DValue(0) - trace),
-		  //     v.Value() *l2.DValue(0)*l1.DValue(0),
-		  //    - v.Value() *l2.DValue(1)*l1.DValue(1),
-		  //    v.Value() * (l2.DValue(0)*l1.DValue(1) - trace)
-		  //    );
          return Vec<4,T>  (v.Value() * (-l2.DValue(1)*l1.DValue(0) - trace),
 		      v.Value() *offdiag,
 		      v.Value() *offdiag,
 		     v.Value() * (l2.DValue(0)*l1.DValue(1) - trace)
 		     );
+
+
+    //   auto trace_n_o_t = (-  l2.DValue(1)*l1.DValue(0) + l2.DValue(0)*l1.DValue(1)) / 2.0;
+    //   auto offdiag_n_o_t = (l2.DValue(0)*l1.DValue(0) - l2.DValue(1)*l1.DValue(1)) / 2.0;
+  
+    //   Vec<4,T> n_o_t  (v.Value() * (-l2.DValue(1)*l1.DValue(0) - trace_n_o_t),
+    //                     v.Value() *offdiag_n_o_t,
+    //                     v.Value() *offdiag_n_o_t,
+    //                     v.Value() * (l2.DValue(0)*l1.DValue(1) - trace_n_o_t)
+    //                     );
+
+    //   auto trace_t_o_n = (-  l1.DValue(1)*l2.DValue(0) + l1.DValue(0)*l2.DValue(1)) / 2.0;
+    //   auto offdiag_t_o_n = (l1.DValue(0)*l2.DValue(0) - l1.DValue(1)*l2.DValue(1)) / 2.0;
+  
+    //   Vec<4,T> t_o_n  (v.Value() * (-l1.DValue(1)*l2.DValue(0) - trace_t_o_n),
+    //                     v.Value() *offdiag_n_o_t,
+    //                     v.Value() *offdiag_n_o_t,
+    //                     v.Value() * (l1.DValue(0)*l2.DValue(1) - trace_t_o_n)
+    //                     );
+
+    //  return n_o_t + t_o_n;
+
+
+
+
 
     }
 
@@ -53,7 +73,81 @@ namespace ngfem
   };
 
   template <int D, typename T>
-  auto dev_Dl1_x_Cl2_v (AutoDiffDiff<D,T> al1, AutoDiffDiff<D,T> al2, AutoDiffDiff<D,T> av) { return T_dev_Dl1_x_Cl2_v<D,T>(al1, al2, av); }
+  auto sym_dev_Dl1_x_Cl2_v (AutoDiffDiff<D,T> al1, AutoDiffDiff<D,T> al2, AutoDiffDiff<D,T> av) { return T_sym_dev_Dl1_x_Cl2_v<D,T>(al1, al2, av); }
+
+
+  /* ############### old style edge basis function ############### */
+  /* sym_dev ( v times grad(l1) o-times Curl(l2) ) */
+  template <int D, typename T>  class T_sym_dev_Dl1_x_Cl0_minus_Dl2_x_Cl0_v;
+  template <typename T>  class T_sym_dev_Dl1_x_Cl0_minus_Dl2_x_Cl0_v<2,T>
+  {
+    AutoDiffDiff<2,T> l0;
+    AutoDiffDiff<2,T> l1;
+    AutoDiffDiff<2,T> l2;
+    AutoDiffDiff<2,T> v;
+  public:
+    T_sym_dev_Dl1_x_Cl0_minus_Dl2_x_Cl0_v  (AutoDiffDiff<2,T> al0, AutoDiffDiff<2,T> al1, AutoDiffDiff<2,T> al2, AutoDiffDiff<2,T> av) : l0(al0), l1(al1), l2(al2), v(av){ ; }
+    
+    Vec<4,T> Shape() {
+
+      
+      // // first
+      // auto trace1 = (-  l1.DValue(1)*l0.DValue(0) + l1.DValue(0)*l0.DValue(1)) / 2.0;
+      // auto offdiag1 = (l1.DValue(0)*l0.DValue(0) - l1.DValue(1)*l0.DValue(1)) / 2.0;
+      
+         
+      //    Vec<4,T> sig1 =  (v.Value() * (-l1.DValue(1)*l0.DValue(0) - trace1),
+		  //     v.Value() *offdiag1,
+		  //     v.Value() *offdiag1,
+		  //    v.Value() * (l1.DValue(0)*l0.DValue(1) - trace1)
+		  //    );
+      // // second
+      // auto trace2 = (-  l2.DValue(1)*l0.DValue(0) + l2.DValue(0)*l0.DValue(1)) / 2.0;
+      // auto offdiag2 = (l2.DValue(0)*l0.DValue(0) - l2.DValue(1)*l0.DValue(1)) / 2.0;
+      
+         
+      //   Vec<4,T> sig2 =  (v.Value() * (-l2.DValue(1)*l0.DValue(0) - trace2),
+      //   v.Value() *offdiag2,
+      //   v.Value() *offdiag2,
+      //   v.Value() * (l2.DValue(0)*l0.DValue(1) - trace2)
+      //   );
+
+      //   return sig1 - sig2;
+
+      auto trace_nn = (l0.DValue(0) *l0.DValue(0) + l0.DValue(1)* l0.DValue(1)) / 2.0;
+       Vec<4,T> n_o_n ( v.Value() * (l0.DValue(0) *l0.DValue(0)-trace_nn),
+                        v.Value() * l0.DValue(0) *l0.DValue(1),
+                        v.Value() * l0.DValue(0) *l0.DValue(1),
+                        v.Value() * (l0.DValue(1)* l0.DValue(1) - trace_nn) );
+
+
+      auto trace_tt = (l1.DValue(0) *l1.DValue(0) + l1.DValue(1)* l1.DValue(1)) / 2.0;
+       Vec<4,T> t_o_t ( v.Value() * (l1.DValue(1) *l1.DValue(1)-trace_tt),
+                        -v.Value() * l1.DValue(0) *l1.DValue(1),
+                        -v.Value() * l1.DValue(0) *l1.DValue(1),
+                        v.Value() * (l1.DValue(0)* l1.DValue(0) - trace_tt) );
+
+     return n_o_n; //- t_o_t;
+
+    }
+
+    Vec<2,T> DivShape()
+    {      
+      return Vec<2,T> (0.0,0.0);     
+    }
+
+    Vec<2,T> CurlShape()
+    {      
+      return Vec<2,T> (0.0,0.0);     
+    }
+  };
+
+  template <int D, typename T>
+  auto sym_dev_Dl1_x_Cl0_minus_Dl2_x_Cl0_v (AutoDiffDiff<D,T> al0, AutoDiffDiff<D,T> al1, AutoDiffDiff<D,T> al2, AutoDiffDiff<D,T> av) { return  T_sym_dev_Dl1_x_Cl0_minus_Dl2_x_Cl0_v<D,T>(al0, al1, al2, av); }
+
+
+
+
 
   /* ############### edge basis functions - div-free ############### */
   /* sigma(grad v) = Curl(grad v), where Curl is the 1D to 2D curl operator */

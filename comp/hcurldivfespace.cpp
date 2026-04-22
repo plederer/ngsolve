@@ -635,7 +635,7 @@ namespace ngcomp
     }
 
     first_facet_dof.Last() = ndof;
-    if(discontinuous) ndof = 0;
+    if(discontinuous || sym_on_Alfeld) ndof = 0;
     
     for(auto i : Range(ma->GetNE()))
     {
@@ -666,17 +666,29 @@ namespace ngcomp
             ndof += ldof;
           else 
           {
+            // sym_on_Alfeld is fully discontinuous
             
-            // inner dofs on sub triangles
-            ndof += 3*ldof;
-            // inner dofs on inner edges
             int of = order_facet[0]; // assumes constant facet order!
-            ndof += 3*(of+1);
-            if (discontinuous)
-              ndof += 3*(of+1);
+            // sym nt_shapes on makro edges
+            ndof += 3*(of+1);  
+
+            // nn-functions with zero nt-components times polynomials
+            ndof += 3 * ((oi+1) * (oi+2)/2.0);
+            ndof += 3 * ((oi) * (oi+1)/2.0); 
+            
+            // // inner dofs on sub triangles
+            // ndof += 3*ldof;
+            // // inner dofs on inner edges
+            
+
+            // // ndof += 3*(of+1);
+            // ndof += 3;
+
+            // if (discontinuous)
+            //   ndof += 3*(of+1);
           }
 
-          if(discontinuous)
+          if(discontinuous && !sym_on_Alfeld)
           {
             for (auto f : ma->GetElFacets(ei))
               ndof += first_facet_dof[f+1] - first_facet_dof[f];            
@@ -743,7 +755,7 @@ namespace ngcomp
     }
     first_element_dof.Last() = ndof;    
     
-    if(discontinuous)
+    if(discontinuous || sym_on_Alfeld)
       first_facet_dof = 0;
     UpdateCouplingDofArray();
     if (print)
@@ -765,7 +777,7 @@ namespace ngcomp
     //
     //if (discontinuous) return;
     
-    if(discontinuous || alllocaldofs) 
+    if(discontinuous || alllocaldofs || sym_on_Alfeld) 
       {
         ctofdof = LOCAL_DOF;
         return;
@@ -922,7 +934,7 @@ namespace ngcomp
     Ngs_Element ngel = ma->GetElement(ei);  
     if (!DefinedOn(ngel)) return * new (lh) HCurlDivDummyFE<ET>();
     
-    auto * fe =  new (lh) HCurlDivFE<ET> (order, GGbubbles, sym_on_Alfeld, discontinuous);
+    auto * fe =  new (lh) HCurlDivFE<ET> (order, GGbubbles, sym_on_Alfeld);
     fe->SetVertexNumbers (ngel.Vertices());
     int ii = 0;
     for(auto f : ngel.Facets())
@@ -955,7 +967,7 @@ namespace ngcomp
 
     if (!ei.IsVolume())
     {
-      if(!discontinuous)
+      if(!discontinuous || !sym_on_Alfeld)
       {
         auto feseg = new (alloc) HCurlDivSurfaceFE<ET_SEGM> (order);
         auto fetr = new (alloc) HCurlDivSurfaceFE<ET_TRIG> (order);
