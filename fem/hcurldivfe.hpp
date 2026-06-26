@@ -902,7 +902,9 @@ namespace ngfem
             }
 
           // int v0orig = v0;
+          // int sign = 1;
           if (vnums[v0] > vnums[v1]) { Swap(v0,v1); }
+          // if (vnums[v0] > vnums[v1]) { sign = -1; }
 
           
           Tx lamloc[3] = { ddlami[v0]-ddlami[minlam],

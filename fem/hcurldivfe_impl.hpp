@@ -27,11 +27,13 @@ namespace ngfem
     Vec<4,T> Shape() {
       auto trace = (-  l2.DValue(1)*l1.DValue(0) + l2.DValue(0)*l1.DValue(1)) / 2.0;
       auto offdiag = (l2.DValue(0)*l1.DValue(0) - l2.DValue(1)*l1.DValue(1)) / 2.0;
+
+      auto fac = 1.0/(l2.DValue(0)*l2.DValue(0) + l2.DValue(1)*l2.DValue(1));
       
-         return Vec<4,T>  (v.Value() * (-l2.DValue(1)*l1.DValue(0) - trace),
-		      v.Value() *offdiag,
-		      v.Value() *offdiag,
-		     v.Value() * (l2.DValue(0)*l1.DValue(1) - trace)
+         return Vec<4,T>  (fac * v.Value() * (-l2.DValue(1)*l1.DValue(0) - trace),
+		      fac * v.Value() *offdiag,
+		      fac * v.Value() *offdiag,
+		     fac * v.Value() * (l2.DValue(0)*l1.DValue(1) - trace)
 		     );
 
 

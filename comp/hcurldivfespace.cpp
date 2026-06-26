@@ -635,7 +635,7 @@ namespace ngcomp
     }
 
     first_facet_dof.Last() = ndof;
-    if(discontinuous || sym_on_Alfeld) ndof = 0;
+    if(discontinuous) ndof = 0;
     
     for(auto i : Range(ma->GetNE()))
     {
@@ -668,9 +668,10 @@ namespace ngcomp
           {
             // sym_on_Alfeld is fully discontinuous
             
-            int of = order_facet[0]; // assumes constant facet order!
+            // int of = order_facet[0]; // assumes constant facet order!
+            
             // sym nt_shapes on makro edges
-            ndof += 3*(of+1);  
+            // ndof += 3*(of+1);  
 
             // nn-functions with zero nt-components times polynomials
             ndof += 3 * ((oi+1) * (oi+2)/2.0);
@@ -688,7 +689,7 @@ namespace ngcomp
             //   ndof += 3*(of+1);
           }
 
-          if(discontinuous && !sym_on_Alfeld)
+          if(discontinuous)
           {
             for (auto f : ma->GetElFacets(ei))
               ndof += first_facet_dof[f+1] - first_facet_dof[f];            
@@ -755,7 +756,7 @@ namespace ngcomp
     }
     first_element_dof.Last() = ndof;    
     
-    if(discontinuous || sym_on_Alfeld)
+    if(discontinuous)
       first_facet_dof = 0;
     UpdateCouplingDofArray();
     if (print)
@@ -777,7 +778,7 @@ namespace ngcomp
     //
     //if (discontinuous) return;
     
-    if(discontinuous || alllocaldofs || sym_on_Alfeld) 
+    if(discontinuous || alllocaldofs) 
       {
         ctofdof = LOCAL_DOF;
         return;
@@ -967,7 +968,7 @@ namespace ngcomp
 
     if (!ei.IsVolume())
     {
-      if(!discontinuous || !sym_on_Alfeld)
+      if(!discontinuous)
       {
         auto feseg = new (alloc) HCurlDivSurfaceFE<ET_SEGM> (order);
         auto fetr = new (alloc) HCurlDivSurfaceFE<ET_TRIG> (order);
