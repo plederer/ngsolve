@@ -11,7 +11,7 @@ add_library( ngcomp ${NGS_LIB_TYPE}
         numberfespace.cpp irspace.cpp h1lumping.cpp bddc.cpp h1amg.cpp
         hypre_precond.cpp hdivdivfespace.cpp hdivdivsurfacespace.cpp hcurlcurlfespace.cpp
         Hddf.cpp tpfes.cpp hcurldivfespace.cpp HCTspace.cpp JKMspace.cpp fesconvert.cpp
-        python_comp.cpp python_comp_mesh.cpp ../fem/python_fem.cpp vtkoutput.cpp
+        python_comp.cpp python_comp_mesh.cpp read_ansys.cpp ../fem/python_fem.cpp vtkoutput.cpp
         periodic.cpp discontinuous.cpp hidden.cpp reorderedfespace.cpp
         hypre_ams_precond.cpp facetsurffespace.cpp
         compressedfespace.cpp plateaufespace.cpp 
@@ -38,7 +38,7 @@ install( FILES
         fespace.hpp gridfunction.hpp h1hofespace.hpp hcurlhdivfes.hpp	   
         hcurlhofespace.hpp hdivfes.hpp hdivhofespace.hpp hdivhosurfacefespace.hpp
         l2hofespace.hpp hdivdivsurfacespace.hpp HCTspace.hpp JKMspace.hpp tpfes.hpp
-        linearform.hpp meshaccess.hpp ngsobject.hpp	   
+        linearform.hpp meshaccess.hpp ngsobject.hpp specialelementgroup.hpp	   
         postproc.hpp preconditioner.hpp tangentialfacetfespace.hpp Hddf.hpp
         normalfacetfespace.hpp normalfacetsurfacefespace.hpp hypre_precond.hpp h1amg.hpp
         irspace.hpp h1lumping.hpp vtkoutput.hpp pmltrafo.hpp periodic.hpp

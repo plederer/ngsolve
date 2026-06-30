@@ -32,10 +32,17 @@ namespace ngcomp
     on_proc = int ( flags.GetNumFlag("only_on", -1));
     if (!flags.GetDefineFlag ("not_register_for_auto_update"))
       {
-        bfa->SetPreconditioner(this);
+        if (bfa)
+          bfa->SetPreconditioner(this);
         is_registered = true;
       }
 
+    // cout << "pre base, flags = " << aflags << endl;
+    if (flags.AnyFlagDefined("additional_dirichlet_constraints"))
+      {
+        // cout << "Set Additonal Dirichelt, in base Preconditioner base" << endl;
+        additional_dirichlet_constraints = std::any_cast<Region>(flags.GetAnyFlag("additional_dirichlet_constraints"));
+      }
   }
   
 
@@ -46,6 +53,37 @@ namespace ngcomp
       bfp->UnsetPreconditioner(this);
   }
 
+  DocInfo Preconditioner :: GetDocu ()
+  {
+    DocInfo docu;
+    docu.short_docu = "Base class preconditioner.";
+    docu.Arg("additional_dirichlet_constraints") = "optional<Region> = False";
+    return docu;
+  }
+
+  shared_ptr<Preconditioner> Preconditioner :: Create (shared_ptr<BilinearForm> bfa, const Flags & cflags) const
+  {
+    throw Exception(string("Preconditioner::Create not overloaded for ") + typeid(*this).name());
+  }
+
+  bool Preconditioner :: IsCreator() const
+  {
+    return GetBilinearForm() == nullptr;
+  }
+  shared_ptr<BitArray> Preconditioner :: GetFreeDofs (bool external) const
+  {
+    auto freedofs = bf.lock()->GetFESpace()->GetFreeDofs(external);
+    if (additional_dirichlet_constraints)
+      {
+        BitArray dofs = bf.lock()->GetFESpace()->GetDofs(*additional_dirichlet_constraints);
+        dofs.Invert();
+        dofs.And(*freedofs);
+        freedofs = make_shared<BitArray>(std::move(dofs));
+      }
+    return freedofs;
+  }
+
+  
   void Preconditioner :: Test () const
   {
     cout << IM(1) << "Compute eigenvalues" << endl;
@@ -202,7 +240,8 @@ namespace ngcomp
     mgfile = flags.GetStringFlag ("mgfile","mgtest.out"); 
     mgnumber = int(flags.GetNumFlag("mgnumber",1)); 
     
-
+    if (!abfa) return;
+    
     shared_ptr<MeshAccess> ma = abfa->GetMeshAccess();
     bfa = abfa;
     // bfa -> SetPreconditioner (this);
@@ -261,6 +300,8 @@ namespace ngcomp
     if (!sm)
       throw Exception ("smoother could not be allocated"); 
 
+    sm -> SetAdditionalDirichletConstraints(additional_dirichlet_constraints);
+    
     auto prol = lo_fes->GetProlongation();
 
     mgp = make_shared<MultigridPreconditioner> (lo_bfa, sm, prol);
@@ -299,18 +340,96 @@ namespace ngcomp
     finesmoothingsteps = int (flags.GetNumFlag ("finesmoothingsteps", 1));
 
     tlp = 0;
-    inversetype = flags.GetStringFlag("inverse", GetInverseName (default_inversetype));
+    inversetype = flags.GetStringFlag("inverse", default_inversetype);
     GetMemoryTracer().Track(*mgp, "MultiGridPreconditioner");
   }
 
 
+  DocInfo MGPreconditioner :: GetDocu ()
+  {
+    DocInfo docu = Preconditioner::GetDocu();
+    docu.short_docu = "A multigrid preconditioner.";
+    docu.long_docu =
+      R"raw_string(TODO
+)raw_string";      
+
+
+    docu.Arg("updateall") = "bool = False\n"
+      "  Update all smoothing levels when calling Update";      
+
+    docu.Arg("smoother") = "string = 'point'\n"
+      "  Smoother between multigrid levels, available options are:\n"
+      "    'point': Gauss-Seidel-Smoother\n"
+      "    'line':  Anisotropic smoother\n"
+      "    'block': Block smoother";
+
+    docu.Arg("coarsetype") = "string = direct\n"
+      "  How to solve coarse problem.";
+    
+
+    docu.Arg("cycle") = "int = 1\n"
+      "  multigrid cycle (0 only smoothing, 1..V-cycle, 2..W-cycle.";
+    docu.Arg("smoothingsteps") = "int = 1\n"
+      "  number of (pre and post-)smoothing steps";
+    docu.Arg("coarsesmoothingsteps") = "int = 1\n"
+      "  If coarsetype is smoothing, then how many smoothingsteps will be done.";
+
+    docu.Arg("updatealways") = "bool = False\n";
+    docu.Arg("blocktype") = "str = vertexpatch\n"
+      "  Blocktype used in compound FESpace for smoothing\n"
+      "  blocks. Options: vertexpatch, edgepatch";
+    
+    
+    /*
+    mg_flags["updateall"] = "bool = False\n"
+      "  Update all smoothing levels when calling Update";
+    mg_flags["smoother"] = "string = 'point'\n"
+      "  Smoother between multigrid levels, available options are:\n"
+      "    'point': Gauss-Seidel-Smoother\n"
+      "    'line':  Anisotropic smoother\n"
+      "    'block': Block smoother";
+    
+    mg_flags["coarsetype"] = "string = direct\n"
+      "  How to solve coarse problem.";
+    mg_flags["cycle"] = "int = 1\n"
+      "  multigrid cycle (0 only smoothing, 1..V-cycle, 2..W-cycle.";
+    mg_flags["smoothingsteps"] = "int = 1\n"
+      "  number of (pre and post-)smoothing steps";
+    mg_flags["coarsesmoothingsteps"] = "int = 1\n"
+      "  If coarsetype is smoothing, then how many smoothingsteps will be done.";
+    
+    mg_flags["updatealways"] = "bool = False\n";
+    mg_flags["blocktype"] = "str = vertexpatch\n"
+      "  Blocktype used in compound FESpace for smoothing\n"
+      "  blocks. Options: vertexpatch, edgepatch";
+    */
+    return docu;    
+  }
+
+  
+  void MGPreconditioner :: SetAdditionalDirichletConstraints (Region areg)
+  {
+    additional_dirichlet_constraints = areg;
+    // if (sm)
+    // sm -> SetAdditionalDirichletConstraints(areg);
+  }
+
+  shared_ptr<Preconditioner> MGPreconditioner :: Create (shared_ptr<BilinearForm> bfa, const Flags & cflags) const
+  {
+    Flags allflags{flags};
+    allflags.Update (cflags); 
+    return make_shared<MGPreconditioner> (bfa, allflags);
+  }
+
+  
+  
   void MGPreconditioner :: Update ()
   {
     static Timer t("MGPreconditioner::Update"); RegionTimer reg(t);
     
     shared_ptr<BilinearForm> lo_bfa = bfa->GetLowOrderBilinearForm();
 
-    INVERSETYPE invtype, loinvtype = default_inversetype;
+    string invtype, loinvtype = default_inversetype;
     invtype = dynamic_cast<const BaseSparseMatrix & > (bfa->GetMatrix()).SetInverseType (inversetype);
     if (lo_bfa)
       loinvtype = dynamic_cast<const BaseSparseMatrix & > (lo_bfa->GetMatrix()) .SetInverseType (inversetype);
@@ -326,7 +445,10 @@ namespace ngcomp
     if (bfa->GetLowOrderBilinearForm()) //  || ntasks > 1) not supported anymore
       {
         static Timer t("MGPreconditioner::Update - fine precond"); RegionTimer reg(t);
+        if (additional_dirichlet_constraints)
+          flags.SetFlag ("additional_dirichlet_constraints", std::any(*additional_dirichlet_constraints));
         auto fine_smoother = make_shared<BlockSmoother> (*bfa->GetMeshAccess(), *bfa, flags);
+        fine_smoother -> SetAdditionalDirichletConstraints(additional_dirichlet_constraints);
         GetMemoryTracer().Track(*fine_smoother, "FineSmoother");
         tlp = make_shared<TwoLevelMatrix> (&bfa->GetMatrix(),
                                            &*mgp,
@@ -441,93 +563,73 @@ namespace ngcomp
   // ****************************** DirectPreconditioner **************************
 
 
-  class NGS_DLL_HEADER DirectPreconditioner : public Preconditioner
+  DocInfo DirectPreconditioner :: GetDocu ()
   {
-    shared_ptr<BilinearForm> bfa;
-    shared_ptr<BaseMatrix> inverse;
-    string inversetype;
+    DocInfo docu = Preconditioner::GetDocu();
+    docu.short_docu = "A direct solver as preconditioner.";
+    docu.long_docu =
+      R"raw_string(Computes a sparse facgtorization at update, forward/backward solve in apply
+)raw_string";      
 
-  public:
-    DirectPreconditioner (shared_ptr<BilinearForm> abfa, const Flags & aflags,
-			  const string aname = "directprecond")
-      : Preconditioner(abfa,aflags,aname), bfa(abfa)
-    {
-      // bfa -> SetPreconditioner (this);
-      inversetype = flags.GetStringFlag("inverse", GetInverseName (default_inversetype));
-    }
+    docu.Arg("inverse") = "string = "+default_inversetype+"\n"
+      "  use block Jacobi/Gauss-Seidel";
+    
+    /*
+    docu.Arg("block") = "bool = false\n"
+      "  use block Jacobi/Gauss-Seidel";
+    docu.Arg("GS") = "bool = false\n"
+      "  use Gauss-Seidel instead of Jacobi";
+    docu.Arg("blocktype") = "string = undefined\n"
+      "  uses block Jacobi with blocks defined by space";
+    */
+    return docu;    
+  }
 
-    ///
-    virtual ~DirectPreconditioner()
-    {
-      ; //delete inverse;
-    }
+  shared_ptr<Preconditioner> DirectPreconditioner :: Create (shared_ptr<BilinearForm> bfa, const Flags & cflags) const
+  {
+    Flags allflags{flags};
+    allflags.Update (cflags); 
+    return make_shared<DirectPreconditioner> (bfa, allflags);
+  }
+
+  
+  void DirectPreconditioner :: Update ()
+  {
+    // delete inverse;
+    if (GetTimeStamp() == bfa->GetTimeStamp()) return;
+    timestamp = bfa->GetTimeStamp();
     
-    virtual void FinalizeLevel (const BaseMatrix * mat) 
-    {
-      Update();
-    }
+    cout << IM(3) << "Update Direct Solver Preconditioner" << flush;
     
-    ///
-    virtual void Update ()
-    {
-      // delete inverse;
-      if (GetTimeStamp() == bfa->GetTimeStamp()) return;
-      timestamp = bfa->GetTimeStamp();
-      
-      cout << IM(3) << "Update Direct Solver Preconditioner" << flush;
-      
-      try
-	{                                          
-          auto have_sparse_fact = dynamic_pointer_cast<SparseFactorization> (inverse);
-          if (have_sparse_fact && have_sparse_fact -> SupportsUpdate())
-            {
-              if (have_sparse_fact->GetAMatrix() == bfa->GetMatrixPtr())
-                {
-                  // cout << "have the same matrix, can update factorization" << endl;
-                  have_sparse_fact->Update();
+    try
+      {                                          
+        auto have_sparse_fact = dynamic_pointer_cast<SparseFactorization> (inverse);
+        if (have_sparse_fact && have_sparse_fact -> SupportsUpdate())
+          {
+            if (have_sparse_fact->GetAMatrix() == bfa->GetMatrixPtr())
+              {
+                // cout << "have the same matrix, can update factorization" << endl;
+                have_sparse_fact->Update();
                   return;
-                }
-            }
-          
-	  bfa->GetMatrix().SetInverseType (inversetype);
-	  shared_ptr<BitArray> freedofs = 
-	    bfa->GetFESpace()->GetFreeDofs (bfa->UsesEliminateInternal());
-	  inverse = bfa->GetMatrix().InverseMatrix(freedofs);
-	}
-      catch (exception & e)
-	{
-	  throw Exception (string("caught exception in DirectPreconditioner: \n") +
+              }
+          }
+        
+        bfa->GetMatrix().SetInverseType (inversetype);
+        /*
+        shared_ptr<BitArray> freedofs = 
+          bfa->GetFESpace()->GetFreeDofs (bfa->UsesEliminateInternal());
+        */
+        shared_ptr<BitArray> freedofs = this->GetFreeDofs (bfa->UsesEliminateInternal());
+        inverse = bfa->GetMatrix().InverseMatrix(freedofs);
+      }
+    catch (exception & e)
+      {
+        throw Exception (string("caught exception in DirectPreconditioner: \n") +
                            e.what() + 
-                           "\nneeds a sparse matrix (or has memory problems)");
-	}
-      GetMemoryTracer().Track(*inverse, "Inverse");
-    }
-
-    virtual void CleanUpLevel ()
-    {
-      // delete inverse;
-      inverse = nullptr;
-    }
-
-    virtual const BaseMatrix & GetMatrix() const
-    {
-      if (!inverse)
-        ThrowPreconditionerNotReady();        
-      return *inverse;
-    }
-
-    virtual const BaseMatrix & GetAMatrix() const
-    {
-      return bfa->GetMatrix(); 
-    }
-
-    virtual const char * ClassName() const
-    {
-      return "Direct Preconditioner"; 
-    }
-  };
-
-
+                         "\nneeds a sparse matrix (or has memory problems)");
+      }
+    GetMemoryTracer().Track(*inverse, "Inverse");
+  }
 
 
 
@@ -552,8 +654,8 @@ namespace ngcomp
     string smoother = flags.GetStringFlag("smoother","");
     if ( smoother == "block" )
       block = true;
-    if (bfa->UsesEliminateInternal())
-      flags.SetFlag("condense");
+    if (bfa && bfa->UsesEliminateInternal())
+        flags.SetFlag("condense");
 
     // coarse-grid preconditioner only used in parallel!!
     ct = "NO_COARSE";
@@ -570,7 +672,7 @@ namespace ngcomp
 
   DocInfo LocalPreconditioner :: GetDocu ()
   {
-    DocInfo docu; //  = FESpace::GetDocu();
+    DocInfo docu = Preconditioner::GetDocu();    
     docu.short_docu = "A local preconditioner.";
     docu.long_docu =
       R"raw_string(additive or multiplicative point or block preconditioner
@@ -582,10 +684,16 @@ namespace ngcomp
       "  use Gauss-Seidel instead of Jacobi";
     docu.Arg("blocktype") = "string = undefined\n"
       "  uses block Jacobi with blocks defined by space";
+    
     return docu;    
   }
   
-
+  shared_ptr<Preconditioner> LocalPreconditioner :: Create (shared_ptr<BilinearForm> bfa, const Flags & cflags) const
+  {
+    Flags allflags{flags};
+    allflags.Update (cflags); 
+    return make_shared<LocalPreconditioner> (bfa, allflags);
+  }
   
   void LocalPreconditioner :: FinalizeLevel (const BaseMatrix * mat)
   {
@@ -594,6 +702,9 @@ namespace ngcomp
 
       if (flags.StringFlagDefined("blocktype") || flags.StringListFlagDefined("blocktype"))
         {
+          if (additional_dirichlet_constraints)
+            flags.SetFlag ("additional_dirichlet_constraints", std::any(*additional_dirichlet_constraints));
+          
           auto blocks = bfa->GetFESpace()->CreateSmoothingBlocks(flags);
           shared_ptr<BaseMatrix> mat = bfa->GetMatrixPtr();          
           auto spmat = dynamic_pointer_cast<BaseSparseMatrix> (mat);
@@ -665,7 +776,8 @@ namespace ngcomp
 #endif
 
           auto spmat = dynamic_pointer_cast<BaseSparseMatrix> (mat);
-          auto inner = bfa->GetFESpace()->GetFreeDofs(bfa->UsesEliminateInternal());
+          // auto inner = bfa->GetFESpace()->GetFreeDofs(bfa->UsesEliminateInternal());
+          auto inner = this->GetFreeDofs(bfa->UsesEliminateInternal());
           if (GaussSeidel)
             jacobi = make_shared<SymmetricGaussSeidelPrecond>(spmat, inner);
           else

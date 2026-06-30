@@ -19,6 +19,7 @@ namespace ngcomp
 
 namespace ngfem
 {
+  enum TrialOrTest : uint8_t { TRIAL, TEST };
 
   class NGS_DLL_HEADER ProxyFunction : public CoefficientFunction
 {
@@ -257,7 +258,6 @@ public:
 
     shared_ptr<SumOfIntegrals> operator() (shared_ptr<CoefficientFunction> u) const;
   };
-
 
   
 class ProxyUserData
@@ -678,7 +678,11 @@ public:
     
     const auto & GetCoefficientFunction() { return cf; }
     const auto & TrialProxies() { return trial_proxies; } 
-    const auto & TestProxies() { return test_proxies; } 
+    const auto & TestProxies() { return test_proxies; }
+    const auto & Proxies(TrialOrTest kind)
+    {
+      return (kind == TRIAL) ? trial_proxies : test_proxies;
+    }
     const auto & GridFunctionCoefficients() { return gridfunction_cfs; } 
   };
 

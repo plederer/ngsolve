@@ -24,9 +24,32 @@ namespace ngla
       {
         first_call = false;
         cublasCreate_v2 (&handle);
+
       }
     return handle;
   }
+
+  // Workspace pointer — only allocated when graphs are used
+  static void* cublas_workspace = nullptr;
+  static const size_t cublas_workspace_size = 32 * 1024 * 1024; // 32 MiB (H100)
+
+  // Call before graph capture to ensure workspace is allocated
+  void EnsureCuBlasWorkspace()
+  {
+    if (!cublas_workspace)
+      cudaMalloc(&cublas_workspace, cublas_workspace_size);
+    cublasSetWorkspace(Get_CuBlas_Handle(), cublas_workspace, cublas_workspace_size);
+  }
+
+  // Wrapper: set stream AND re-apply workspace if already allocated
+  // (cublasSetStream resets workspace to default pool)
+  void SetCuBlasStream(cudaStream_t stream)
+  {
+    cublasSetStream(Get_CuBlas_Handle(), stream);
+    if (cublas_workspace)
+      cublasSetWorkspace(Get_CuBlas_Handle(), cublas_workspace, cublas_workspace_size);
+  }
+
   cusparseHandle_t Get_CuSparse_Handle ()
   {
     static Timer tsparsehandle("CUDA create cusparse handle");
@@ -39,6 +62,7 @@ namespace ngla
       {
         first_call = false;
         cusparseCreate (&handle);
+        std::cerr << "[cusparse] handle created" << std::endl;
       }
     return handle;
   }
@@ -50,6 +74,14 @@ namespace ngla
     Get_CuBlas_Handle();
     Get_CuSparse_Handle();
 
+    cusparseSetStream(Get_CuSparse_Handle(), ngs_cuda::ngs_cuda_stream);
+    std::cerr << "[InitCuLinalg] cusparseSetStream bound to ngs_cuda_stream" << std::endl;
+
+    ngs_cuda::CudaGraph::stream_change_callback = [](cudaStream_t s) {
+      cusparseSetStream(Get_CuSparse_Handle(), s);
+    };
+
+    std::cerr << "[InitCuLinalg] callback wired, registering creators..." << std::endl;
     BaseVector::RegisterDeviceVectorCreator(typeid(S_BaseVectorPtr<double>),
                                             [] (const BaseVector & vec, bool unified) -> shared_ptr<BaseVector>
                                             {
@@ -168,12 +200,33 @@ namespace ngla
                       dev_ind, dev_col, dev_val,
                       CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO,
                       CUDA_R_64F);
+
+    // pre-compute buffer size, preprocess for graph capture
+    { double alpha=1, beta=0;
+//      std::cerr << "[preprocess] entering block, handle=" << Get_CuSparse_Handle() << std::endl;
+      double *raw_x = nullptr, *raw_y = nullptr;
+      auto err1 = cudaMalloc(&raw_x, width  * sizeof(double));
+      auto err2 = cudaMalloc(&raw_y, height * sizeof(double));
+//      std::cerr << "[preprocess] raw_x=" << raw_x << " err1=" << err1 << " raw_y=" << raw_y << " err2=" << err2 << std::endl;
+      cusparseDnVecDescr_t dx, dy;
+      cusparseCreateDnVec(&dx, width,  raw_x, CUDA_R_64F);
+      cusparseCreateDnVec(&dy, height, raw_y, CUDA_R_64F);
+//      std::cerr << "[preprocess] calling bufferSize" << std::endl;
+      cusparseSpMV_bufferSize(Get_CuSparse_Handle(), CUSPARSE_OPERATION_NON_TRANSPOSE,
+          &alpha, descr, dx, &beta, dy, CUDA_R_64F,
+          CUSPARSE_SPMV_ALG_DEFAULT, &spmv_bufferSize);
+//      std::cerr << "[preprocess] bufferSize=" << spmv_bufferSize << " calling cudaMalloc" << std::endl;
+      cudaMalloc(&spmv_buffer, spmv_bufferSize);
+//      std::cerr << "[preprocess] buffer allocated OK, skipping preprocess" << std::endl;
+      cusparseDestroyDnVec(dx); cusparseDestroyDnVec(dy);
+      cudaFree(raw_x); cudaFree(raw_y); }
   }
 
 
   DevSparseMatrix :: ~DevSparseMatrix ()
   {
     cusparseDestroySpMat(descr);
+    cudaFree(spmv_buffer);
     cudaFree(dev_ind);
     cudaFree(dev_col);
     cudaFree(dev_val);
@@ -195,28 +248,19 @@ namespace ngla
     double alpha= s;
     double beta = 1;
 
-    size_t bufferSize = 0;
-    // void* dBuffer = NULL;
-
     cusparseDnVecDescr_t descr_x, descr_y;
     cusparseCreateDnVec (&descr_x, ux.Size(), ux.DevData(), CUDA_R_64F);
     cusparseCreateDnVec (&descr_y, uy.Size(), uy.DevData(), CUDA_R_64F);
 
-    cusparseSpMV_bufferSize(Get_CuSparse_Handle(), CUSPARSE_OPERATION_NON_TRANSPOSE,
-                            &alpha, descr, descr_x, &beta, descr_y, CUDA_R_64F,
-                            CUSPARSE_SPMV_ALG_DEFAULT, &bufferSize);
-    //cudaMalloc(&dBuffer, bufferSize);
-
-    {
-      DevStackArray<Dev<char>> dBuffer(bufferSize);
-      
-    cusparseSpMV(Get_CuSparse_Handle(), 
+    { cudaStreamCaptureStatus cap_status;
+      cudaStreamIsCapturing(ngs_cuda::ngs_cuda_stream, &cap_status);
+//      std::cerr << "[SpMV] capture status before SpMV: " << cap_status << " (1=capturing)" << std::endl; }
+      }
+    cusparseSetStream(Get_CuSparse_Handle(), ngs_cuda::ngs_cuda_stream);
+    cusparseSpMV(Get_CuSparse_Handle(),
                  CUSPARSE_OPERATION_NON_TRANSPOSE, &alpha, descr,
                  descr_x, &beta, descr_y, CUDA_R_64F,
-                 CUSPARSE_SPMV_ALG_DEFAULT, dBuffer.DevData());
-
-    }
-    // cudaFree(dBuffer);
+                 CUSPARSE_SPMV_ALG_DEFAULT, spmv_buffer);
 
     cusparseDestroyDnVec(descr_x);
     cusparseDestroyDnVec(descr_y);
@@ -331,6 +375,9 @@ namespace ngla
     output_onto = disjoint_cols && (mat.GetColDNums().AsArray().Size() == Height());
     output_matrix = mat.OutputMatrix();
     output_matrix_trans = mat.OutputMatrixTrans();
+
+    cudaMalloc(&dev_hx_buf, numblocks * devmat.Width()  * sizeof(double));
+    cudaMalloc(&dev_hy_buf, numblocks * devmat.Height() * sizeof(double));
   }
 
 

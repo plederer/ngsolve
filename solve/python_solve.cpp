@@ -745,8 +745,6 @@ void ExportVisFunctions(py::module &m) {
     m.def("_GetFacetValues", [](shared_ptr<ngfem::CoefficientFunction> cf, shared_ptr<ngcomp::MeshAccess> ma,
                                 map<ngfem::ELEMENT_TYPE, IntegrationRule> irs)
           {
-            auto tm = task_manager;
-            task_manager = nullptr;
             LocalHeap lh(10000000, "GetFacetValues");
             int ncomps = cf->Dimension();
             typedef std::pair<ngfem::ELEMENT_TYPE,bool> T_ET;
@@ -791,7 +789,7 @@ void ExportVisFunctions(py::module &m) {
                                   for(auto i : Range(ElementTopology::GetNFacets(el.GetType())))
                                     {
                                       auto eltype = ma->GetFacetType(fnrs[i]);
-                                      typedef std::pair<ngfem::ELEMENT_TYPE,bool> T_ET;  // not defined for msvc in C++20 ?
+                                      // typedef std::pair<ngfem::ELEMENT_TYPE,bool> T_ET;  // not defined for msvc in C++20 ?
                                       auto& vals_real = values_real[/* T_ET */ {eltype, curved}];
                                       auto& vals_imag = values_imag[/* T_ET */ {eltype, curved}];
                                       auto& ir_facet = transform(i, irs[eltype], mlh);
@@ -842,12 +840,9 @@ void ExportVisFunctions(py::module &m) {
             result["max"] = MoveToNumpyArray(max);
             result["real"] = res_real;
             result["imag"] = res_imag;
-            task_manager=tm;
             return result;
           }, py::call_guard<py::gil_scoped_release>());
     m.def("_GetValues", [] (shared_ptr<ngfem::CoefficientFunction> cf, shared_ptr<ngcomp::MeshAccess> ma, VorB vb, map<ngfem::ELEMENT_TYPE, IntegrationRule> irs, bool covariant) {
-              auto tm = task_manager;
-              task_manager = nullptr;
               LocalHeap lh(10000000, "GetValues");
               // int dim = ma->GetDimension();
               // if(vb==BND) dim-=1;
@@ -950,7 +945,6 @@ void ExportVisFunctions(py::module &m) {
             res["max"] = MoveToNumpyArray(max);
             res["real"] = res_real;
             res["imag"] = res_imag;
-            task_manager = tm;
             return res;
     },py::call_guard<py::gil_scoped_release>());
 

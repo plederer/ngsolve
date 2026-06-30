@@ -76,6 +76,33 @@ namespace ngcomp
                             shared_ptr<FESpace> target_fes,
                             std::function<tuple<Matrix<>,Array<int>,Array<int>>(ElementId)> creator,
                             LocalHeap & lh);
+
+
+  class DirichletBoundary
+  {
+  public:
+    shared_ptr<ProxyFunction> proxy;
+    RegionDescriptor vbn;
+  };
+
+  class DirichletBC
+  
+  {
+  public:
+    shared_ptr<ProxyFunction> proxy;
+    RegionDescriptor vbn;
+    shared_ptr<CoefficientFunction> val;
+  };
+
+
+  // sum of integrals = 0
+  class VariationalEquation
+  {
+  public:
+    SumOfIntegrals igls;
+  };
+
+  
 }
 
 namespace ngfem
@@ -156,11 +183,13 @@ static GlobalDummyVariables globvar;
 
 
 void ExportNgcompMesh (py::module &m);
+void ExportReadAnsys (py::module &m);
 
 void NGS_DLL_HEADER ExportNgcomp(py::module &m)
 {
 
   ExportNgcompMesh(m);
+  ExportReadAnsys(m);
   //////////////////////////////////////////////////////////////////////////////////////////
 
   static size_t global_heapsize =
@@ -491,6 +520,15 @@ when building the system matrices.
               op = make_shared<DualProxyFunction> (*op);
             return op;
 	  }, py::arg("name"), "Use an additional operator of the finite element space")
+    .def("Dual",
+         [] (const spProxy self)
+          {
+            auto op = self->GetAdditionalProxy("dual");
+            if (!op)
+              throw Exception(string("Operator 'dual'  does not exist for ") + self->GetFESpace()->GetClassName() + string("!"));
+            op = make_shared<DualProxyFunction> (*op);
+            return op;
+	  }, "Use dual shapes")
     .def("Operators",
          [] (const spProxy self)
          {
@@ -512,6 +550,56 @@ when building the system matrices.
     .def("ReplaceFunction", [](shared_ptr<ProxyFunction> proxy, shared_ptr<GridFunction> gf) {
       return make_shared<GridFunctionCoefficientFunction>(gf, proxy); },
       "replace proxyfunction by GridFunction, apply the same operator")
+
+    /*
+    .def("__setitem__", [](shared_ptr<ProxyFunction> self, string name, spCF cf) {
+      Region reg(self->GetFESpace()->GetMeshAccess(), BND, name);
+      return DirichletCondition(self, reg, cf);
+    }), py::arg("name"),py::arg("cf"))
+    */
+    .def("__getitem__", [](spProxy self, int comp) -> py::object
+    {
+      return py::type::of<CoefficientFunction>().attr("__getitem__")(self, comp);
+    }, py::arg("comp"), "returns component comp of vectorial CF")
+    .def("__getitem__", [](spProxy self, py::slice inds) -> py::object
+    {
+      return py::type::of<CoefficientFunction>().attr("__getitem__")(self, inds);
+    }, py::arg("components"))
+    .def("__getitem__", [](spProxy self, py::tuple comps) -> py::object
+    {
+      return py::type::of<CoefficientFunction>().attr("__getitem__")(self, comps);
+    })
+    .def("__getitem__", [](spProxy self, RegionDescriptor vbn)
+    {
+      return DirichletBoundary { self, vbn };
+    })
+
+    
+    /*
+    .def("__or__", [](shared_ptr<ProxyFunction> self, VBnName vbn)
+    {
+      return DirichletBoundary { self, vbn };
+    })
+    */
+    ;
+
+  py::class_<DirichletBoundary> (m, "DirichletBoundary")
+    .def("__eq__", [](DirichletBoundary dir, shared_ptr<CoefficientFunction> cf) {
+      return DirichletBC { dir.proxy, dir.vbn, cf };
+    })
+    ;
+    
+  py::class_<DirichletBC> (m, "DirichletBC")
+    .def_property_readonly("proxy", [](DirichletBC & cond) { return cond.proxy; })
+    .def_property_readonly("vbn", [](DirichletBC & cond) { return cond.vbn; })
+    .def_property_readonly("vb", [](DirichletBC & cond) { return cond.vbn.vb; })
+    .def_property_readonly("name", [](DirichletBC & cond) { return cond.vbn.name; })    
+    .def_property_readonly("val", [](DirichletBC & cond) { return cond.val; })    
+    ;
+
+
+  py::class_<VariationalEquation> (m, "VariationalEquation")
+    .def_property_readonly("igls", [](VariationalEquation eq) { return eq.igls; })
     ;
 
   m.def("SetHeapSize",
@@ -2051,7 +2139,7 @@ active_dofs : BitArray or None
                      " Automatically update on FE space update"
                      );
                 })
-    .def(py::pickle([] (const GridFunction& gf)
+    .def(py::pickle([] (const GridFunction& gf) -> py::tuple
                     {
                       if (ngcore::parallel_pickling && gf.GetFESpace()->GetMeshAccess()->GetCommunicator().Size() > 1)
                         {
@@ -2161,13 +2249,24 @@ parallel : bool
          [](shared_ptr<GF> self, spCF cf,
             VorB vb, py::object definedon, bool dualdiffop, bool use_simd, int mdcomp, optional<shared_ptr<BitArray>> definedonelements, int bonus_intorder)
          {
-           shared_ptr<TPHighOrderFESpace> tpspace = dynamic_pointer_cast<TPHighOrderFESpace>(self->GetFESpace());          
-            Region * reg = nullptr;
-            if (py::extract<Region&> (definedon).check())
-              reg = &py::extract<Region&>(definedon)();
-            
-            py::gil_scoped_release release;
+           shared_ptr<TPHighOrderFESpace> tpspace = dynamic_pointer_cast<TPHighOrderFESpace>(self->GetFESpace());
+           
+           const Region * reg = nullptr;
+           if (py::extract<Region&> (definedon).check())
+             reg = &py::extract<Region&>(definedon)();
+           
+           py::gil_scoped_release release;
 
+           /*
+           shared_ptr<CoefficientFunction>  keepcf;
+           if (auto restcf = dynamic_pointer_cast<RestrictedCoefficientFunction>(cf))
+             {
+               keepcf = cf;
+               reg = & (restcf -> GetRegion());
+               cf = restcf->GetCF();
+             }
+           */
+           
             if(tpspace)
             {
               Transfer2TPMesh(cf.get(),self.get(),glh);
@@ -2227,11 +2326,19 @@ bonus_intorder : int
              reg = &py::extract<Region&>(definedon)();
            
            py::gil_scoped_release release;
-           self->Interpolate (*cf, reg, mdcomp, lhp.GetLH());
+           // self->Interpolate (*cf, reg, mdcomp, lhp.GetLH());
+           self->GetFESpace()->Interpolate(*cf, self->GetVector(mdcomp), reg, lhp.GetLH());
          },
          py::arg("coefficient"),
          py::arg("definedon")=DummyArgument(),
          py::arg("mdcomp")=0)
+
+    
+    .def("__setitem__", [](shared_ptr<GF> self, RegionDescriptor namevb, spCF cf) {
+      Region reg(self->GetFESpace()->GetMeshAccess(), namevb.vb, namevb.name);
+      self->GetFESpace()->Interpolate(*cf, self->GetVector(), &reg, lhp.GetLH());
+    }, py::arg("namevb"),py::arg("cf"))
+
     
     .def_property_readonly("name", &GridFunction::GetName, "Name of the Gridfunction")
 
@@ -2566,6 +2673,12 @@ diffop : ngsolve.fem.DifferentialOperator
         if (i != 0) throw Exception("can only add integer 0 to SumOfIntegrals (for Python sum(list))");
         return igls; })
     .def("SetDefinedOnElements", &SumOfIntegrals::SetDefinedOnElements)
+    .def("__eq__", [](const SumOfIntegrals &igls, double x) {
+      return VariationalEquation { igls };
+    })
+    .def("__eq__", [](const SumOfIntegrals &igls1, const SumOfIntegrals &igls2) {
+      return VariationalEquation { igls1-igls2 };
+    })
     ;
 
   py::class_<Variation> (m, "Variation")
@@ -2804,6 +2917,8 @@ integrator : ngsolve.fem.BFI
              }
            return self;
          })
+
+    .def("__iadd__", [](BF & self, shared_ptr<SpecialElementGroup> seg) -> BilinearForm& { self.Add(seg); return self; })
          
     .def_property_readonly("space", [](BF& self) { return self.GetFESpace(); }, "fespace on which the bilinear form is defined on")
 
@@ -3257,12 +3372,64 @@ integrator : ngsolve.fem.LFI
                 })
     .def ("Test", [](Preconditioner &pre) { pre.Test();}, py::call_guard<py::gil_scoped_release>())
     .def ("Update", [](Preconditioner &pre) { pre.Update();}, py::call_guard<py::gil_scoped_release>(), "Update preconditioner")
+    // .def ("Create", [prec_class](Preconditioner &pre, shared_ptr<BilinearForm> bf, py::kwargs kwargs) { 
+    // auto flags = CreateFlagsFromKwArgs(kwargs, prec_class);      
+    .def ("Create", [](Preconditioner &pre, shared_ptr<BilinearForm> bf, py::kwargs kwargs) { 
+      auto flags = CreateFlagsFromKwArgs(kwargs, py::cast(pre));      
+      return pre.Create(bf, flags);
+    })
+    .def ("IsCreator", [](Preconditioner &pre) { return pre.IsCreator(); })
+    .def ("SetAdditionalDirichletConstraints", [](Preconditioner & pre, Region reg) { pre.SetAdditionalDirichletConstraints(reg); })
+    .def("__str__", [](Preconditioner &self) { return ToString<Preconditioner>(self); } )
+    
     .def_property_readonly("mat", [](Preconditioner &self)
                    {
                      return self.GetMatrixPtr();
                    }, "matrix of the preconditioner")
     ;
 
+  /*
+  {
+    auto creator = py::cpp_function
+      ([](py::object cls, py::kwargs kwargs)
+      {
+        return py::cpp_function
+          ([cls, kwargs](py::object bf)
+            { return cls(*py::make_tuple(bf), **kwargs); },
+            py::arg("bf"),
+            "Create and register the deferred preconditioner with a BilinearForm.");
+      },
+        "Deferred preconditioner; call the result with a BilinearForm to create it.");
+    prec_class.attr("Creator1") =
+      py::reinterpret_borrow<py::object>(PyClassMethod_New(creator.ptr()));
+  }
+  */
+  
+  {
+    struct CreatorClass {
+      py::object cls;
+      py::kwargs kwargs;
+    };
+
+    py::class_<CreatorClass> (m, "PreconditionerCreator")
+      .def("__call__", [](CreatorClass & c, py::object bf, py::kwargs kw2) {
+        // cout << "PreconditionerCreator, kw2 = " << endl;
+        // py::print (kw2);
+        return c.cls(*py::make_tuple(bf), **c.kwargs, **kw2);
+      });
+    
+    auto creator = py::cpp_function ([](py::object cls, py::kwargs kwargs) {
+      return CreatorClass { cls, kwargs };
+    },
+      "Deferred preconditioner; call the result with a BilinearForm to create it.");
+    
+    prec_class.attr("Creator") =
+      py::reinterpret_borrow<py::object>(PyClassMethod_New(creator.ptr()));
+    
+  }
+  
+
+  
   auto pre_local = py::class_<LocalPreconditioner, shared_ptr<LocalPreconditioner>, Preconditioner>
     (m,"LocalPreconditioner", LocalPreconditioner::GetDocu().GetPythonDocString().c_str());
   
@@ -3271,23 +3438,38 @@ integrator : ngsolve.fem.LFI
     {
       auto flags = CreateFlagsFromKwArgs(kwargs, pre_local);
       return make_shared<LocalPreconditioner>(bf, flags, "local");
-    }), py::arg("bf"))
+    }), py::arg("bf")=nullptr)
     .def_static("__flags_doc__", []() {
       return py::dict( py::cast (LocalPreconditioner::GetDocu().arguments) );
     });
   
+  auto pre_direct = py::class_<DirectPreconditioner, shared_ptr<DirectPreconditioner>, Preconditioner>
+    (m,"DirectPreconditioner", DirectPreconditioner::GetDocu().GetPythonDocString().c_str());
+  
+  pre_direct
+    .def(py::init([pre_direct](shared_ptr<BilinearForm> bf, py::kwargs kwargs)
+    {
+      auto flags = CreateFlagsFromKwArgs(kwargs, pre_direct);
+      return make_shared<DirectPreconditioner>(bf, flags, "local");
+    }), py::arg("bf")=nullptr)
+    .def_static("__flags_doc__", []() {
+      return py::dict( py::cast (DirectPreconditioner::GetDocu().arguments) );
+    });
+  
 
+
+  
   auto pre_bddc = py::class_<BASE_BDDCPreconditioner, shared_ptr<BASE_BDDCPreconditioner>, Preconditioner>
     (m,"BDDCPreconditioner", BASE_BDDCPreconditioner::GetDocu().GetPythonDocString().c_str());
   pre_bddc
     .def(py::init([pre_bddc](shared_ptr<BilinearForm> bf, py::kwargs kwargs)->shared_ptr<BASE_BDDCPreconditioner>
     {
       auto flags = CreateFlagsFromKwArgs(kwargs, pre_bddc);
-      if (bf->GetFESpace()->IsComplex())
+      if (bf && bf->GetFESpace()->IsComplex())
         return make_shared<BDDCPreconditioner<Complex>> (bf, flags, "bddc");
       else
         return make_shared<BDDCPreconditioner<double>> (bf, flags, "bddc");
-    }), py::arg("bf"))
+    }), py::arg("bf")=nullptr)
     .def_static("__flags_doc__", []()
     {
       py::dict flags_doc;
@@ -3310,33 +3492,16 @@ integrator : ngsolve.fem.LFI
                     auto mgpre = make_shared<MGPreconditioner>(bfa,flags, name);
                     if(lo_precond.has_value())
                       mgpre->SetCoarsePreconditioner(lo_precond.value());
-                    if (bfa->GetNLevels() > 0)
+                    if (bfa && bfa->GetNLevels() > 0)
                       mgpre->Update();
                     return mgpre;
-                  }), py::arg("bf"), "name"_a = "multigrid", "lo_preconditioner"_a = nullopt)
+                  }), py::arg("bf")=nullptr, "name"_a = "multigrid", "lo_preconditioner"_a = nullopt)
     .def_static("__flags_doc__", [prec_class] ()
                 {
-                  auto mg_flags = py::cast<py::dict>(prec_class.attr("__flags_doc__")());
-                  mg_flags["updateall"] = "bool = False\n"
-                    "  Update all smoothing levels when calling Update";
-                  mg_flags["smoother"] = "string = 'point'\n"
-                    "  Smoother between multigrid levels, available options are:\n"
-                    "    'point': Gauss-Seidel-Smoother\n"
-                    "    'line':  Anisotropic smoother\n"
-                    "    'block': Block smoother";
-                  mg_flags["coarsetype"] = "string = direct\n"
-                    "  How to solve coarse problem.";
-                  mg_flags["cycle"] = "int = 1\n"
-                    "  multigrid cycle (0 only smoothing, 1..V-cycle, 2..W-cycle.";
-                  mg_flags["smoothingsteps"] = "int = 1\n"
-                    "  number of (pre and post-)smoothing steps";
-                  mg_flags["coarsesmoothingsteps"] = "int = 1\n"
-                    "  If coarsetype is smoothing, then how many smoothingsteps will be done.";
-                  mg_flags["updatealways"] = "bool = False\n";
-                  mg_flags["blocktype"] = "str = vertexpatch\n"
-                    "  Blocktype used in compound FESpace for smoothing\n"
-                    "  blocks. Options: vertexpatch, edgepatch";
-                  return mg_flags;
+                  py::dict flags_doc;
+                  for (auto & flagdoc : MGPreconditioner::GetDocu().arguments)
+                    flags_doc[get<0> (flagdoc).c_str()] = get<1> (flagdoc);
+                  return flags_doc;
                 })
 
     // not working because shared_ptr<Array<int>> cannot be pybind arg type?
@@ -4251,7 +4416,7 @@ deformation : ngsolve.comp.GridFunction
             for (FlatArray<int> els_of_col : element_coloring1)
             {
               SharedLoop sl(els_of_col.Range());
-              task_manager -> CreateJob
+              TaskManager :: CreateJob
               ( [&] (const TaskInfo & ti) 
               {
                 LocalHeap lh = clh.Split(ti.thread_nr, ti.nthreads);
@@ -4450,7 +4615,12 @@ legacy : bool (default: False)
   defines if legacy-VTK output shall be used 
 
 order : int (default: 1)
-  allowed values: 1,2
+  Polynomial order of the output cells. Orders 1 and 2 use VTK's linear and
+  quadratic cell types. Orders >= 3 use VTK's arbitrary-order Lagrange cell
+  types (VTK_LAGRANGE_*), which require ParaView >= 5.5 / VTK >= 8.1. A single
+  high-order cell then reproduces the (curved) geometry and the field to degree
+  `order`; raise ParaView's "Nonlinear Subdivision Level" to render the
+  curvature. Note that the number of nodes per cell grows as O(order^dim).
 
 same_type_subdivision : bool (default: False)
   When True, each element is subdivided into sub-cells of the same type only.
@@ -4693,6 +4863,28 @@ If `maxdist` == 0. then 2*meshsize is used.
      })
      ;
 
+   py::class_<SpecialElementGroup, shared_ptr<SpecialElementGroup>> (m, "SpecialElementGroup");
+
+   py::class_<ContactIntegrator2, shared_ptr<ContactIntegrator2>, SpecialElementGroup> (m, "ContactIntegrator")
+     .def(py::init([](std::variant<Region,string> primary, std::variant<Region,string> secondary,
+                      shared_ptr<GridFunction> deformation, std::optional<int> intorder) {
+       auto ci = make_shared<ContactIntegrator2>(primary, secondary, deformation);
+       if (intorder.has_value()) ci->SetIntOrder (*intorder);
+       return ci;
+     }), py::arg("me"), py::arg("other"), py::arg("deformation")=nullptr, py::arg("intorder")=nullopt)
+     .def("Add", [](shared_ptr<ContactIntegrator2> ci, shared_ptr<CoefficientFunction> coef) {
+       ci -> AddIntegrator(coef);
+       return ci;
+     })
+     ;
+          
+   
+   
+
+   
+
+
+   
   m.def("ToArchive", [](shared_ptr<netgen::Mesh> mesh, bool binary){
         return py::bytes(webgui::ToArchive(mesh, binary));
   });

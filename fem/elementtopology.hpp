@@ -113,6 +113,15 @@ namespace ngfem
     return ost;
   }
 
+  class RegionDescriptor
+  {
+  public:
+    VorB vb;
+    string name;
+    RegionDescriptor operator~ () const { return { vb, "^(?!^" + name + "$).*$" }; }
+  };
+  
+
   class ElementId
   {
     typedef size_t int_type;
@@ -155,6 +164,17 @@ namespace ngfem
     size_t Nr() const { return nr; } 
   };
 
+
+  class RegionId
+  {
+    VorB vb;
+    int nr;
+  public:
+    RegionId (VorB avb, int anr) : vb(avb), nr(anr) { }
+    VorB VB() const { return vb; }
+    int Nr() const { return nr; }
+  };
+  
   
   /// Topology and coordinate information of master element:
   class NGS_DLL_HEADER ElementTopology
@@ -356,7 +376,8 @@ namespace ngfem
     { return GetVertices(myet); }
 
     /// returns edges of elements. zero-based pairs of integers
-    static const EDGE * GetEdges (ELEMENT_TYPE et)
+    // static const EDGE * GetEdges (ELEMENT_TYPE et)
+    static FlatArray<const EDGE> GetEdges (ELEMENT_TYPE et)
     {
       static const int segm_edges[1][2] =
 	{ { 0, 1 }};
@@ -436,24 +457,24 @@ namespace ngfem
     
       switch (et)
 	{
-        case ET_POINT: return nullptr;
-	case ET_SEGM: return segm_edges;
-	case ET_TRIG: return trig_edges;
-	case ET_QUAD: return quad_edges;
-	case ET_TET:  return tet_edges;
-	case ET_PYRAMID: return pyramid_edges;
-	case ET_PRISM: return prism_edges;
-	case ET_HEXAMID: return hexamid_edges;
-	case ET_HEX: return hex_edges;
+        case ET_POINT: return { 0, nullptr };
+	case ET_SEGM: return { 1, segm_edges };
+	case ET_TRIG: return { 3, trig_edges };
+	case ET_QUAD: return { 4, quad_edges };
+	case ET_TET:  return { 6, tet_edges };
+	case ET_PYRAMID: return { 8, pyramid_edges };
+	case ET_PRISM: return { 9, prism_edges };
+	case ET_HEXAMID: return { 11, hexamid_edges };
+	case ET_HEX: return { 12, hex_edges };
 	default:
 	  break;
 	}
       cerr << "Ng_GetEdges, illegal element type " << et << endl;
-      return 0;  
+      return { 0, nullptr };  
     }
 
     /// returns faces of elements. zero-based array of 4 integers, last one is -1 for triangles
-    static const FACE * GetFaces (ELEMENT_TYPE et)
+    static FlatArray<const FACE> GetFaces (ELEMENT_TYPE et)
     {
       static int tet_faces[4][4] =
 	{ { 3, 1, 2, -1 },
@@ -510,23 +531,23 @@ namespace ngfem
     
       switch (et)
 	{
-	case ET_TET: return tet_faces;
-	case ET_PRISM: return prism_faces;
-	case ET_PYRAMID: return pyramid_faces;
-	case ET_HEXAMID: return hexamid_faces;
-	case ET_HEX: return hex_faces;          
+	case ET_TET: return { 4, tet_faces };
+	case ET_PRISM: return { 5, prism_faces };
+	case ET_PYRAMID: return { 5, pyramid_faces };
+	case ET_HEXAMID: return { 6, hexamid_faces };
+	case ET_HEX: return { 6, hex_faces }; 
 
-	case ET_TRIG: return trig_faces;
-	case ET_QUAD: return quad_faces;
+	case ET_TRIG: return { 1, trig_faces };
+	case ET_QUAD: return { 1, quad_faces };
         
-	case ET_SEGM: return nullptr;
-        case ET_POINT: return nullptr;          
+	case ET_SEGM: return { 0, nullptr };
+        case ET_POINT: return { 0, nullptr };  
 	default:
 	  break;
 	}
     
       cerr << "Ng_GetFaces, illegal element type " << et << endl;
-      return 0;
+      return { 0, nullptr };
     }
 
     /// return normals on facets (old style)

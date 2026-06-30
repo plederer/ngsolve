@@ -1296,7 +1296,7 @@ namespace ngfem
       int maxorder_facet =
         max2(order_facet[0][0],max2(order_facet[1][0],order_facet[2][0]));
 
-      const EDGE * edges = ElementTopology::GetEdges(ET_TRIG);
+      const EDGE * edges = ElementTopology::GetEdges(ET_TRIG).Data();
 
       ArrayMem<Tx,20> ha(maxorder_facet+1);
       ArrayMem<Tx,20> u(order_inner[0]+2), v(order_inner[0]+2);
@@ -1414,12 +1414,20 @@ namespace ngfem
           auto p = order_inner[0]-1;
           if( p >= 0 )
             {
+              auto inv = mip.GetJacobianInverse();
+              auto mapped = [&](const Mat<2, 2, T> & S, T val)
+                {
+                  Mat<2, 2, T> mat = Trans(inv) * S * inv;
+                  mat *= mip.GetMeasure() * val;
+                  return mat;
+                };
+
               DubinerBasis::Eval (p, lam[0], lam[1],
                                   SBLambda([&] (size_t nr, T val)
                                            {
-                                             shape[ii++] = val*mip.GetMeasure()*mip.GetJacobian()*Mat<2,2>({{1,0},{0,0}})*Trans(mip.GetJacobian());
-                                             shape[ii++] = val*mip.GetMeasure()*mip.GetJacobian()*Mat<2,2>({{0,0},{0,1}})*Trans(mip.GetJacobian());
-                                             shape[ii++] = val*mip.GetMeasure()*mip.GetJacobian()*Mat<2,2>({{0,1},{1,0}})*Trans(mip.GetJacobian());
+                                             shape[ii++] = mapped(Mat<2, 2>({{1,0},{0,0}}), val);
+                                             shape[ii++] = mapped(Mat<2, 2>({{0,0},{0,1}}), val);
+                                             shape[ii++] = mapped(Mat<2, 2>({{0,1},{1,0}}), val);
                                            }));
             }
         }
@@ -1433,8 +1441,8 @@ namespace ngfem
   public:
     using T_HDivDivFE<ET_QUAD> :: T_HDivDivFE;
 
-    enum {incsg = -1};
-    enum {incsugv = -1};
+  static constexpr int incsg = -1;
+  static constexpr int incsugv = -1;
 
     virtual void ComputeNDof()
     {
@@ -1472,7 +1480,7 @@ namespace ngfem
       
       int ii = 0;
 
-      const EDGE * edges = ElementTopology::GetEdges(ET_QUAD);
+      const EDGE * edges = ElementTopology::GetEdges(ET_QUAD).Data();
 
       ArrayMem<Tx,20> u(order+2), v(order+2);
       
@@ -1616,7 +1624,7 @@ namespace ngfem
       
       int ii = 0;
 
-      const EDGE * edges = ElementTopology::GetEdges(ET_QUAD);
+      const EDGE * edges = ElementTopology::GetEdges(ET_QUAD).Data();
 
       ArrayMem<Tx,20> u(order+2), v(order+2);
       
@@ -1988,14 +1996,14 @@ namespace ngfem
     // order k+1 for certain components, for inner and boundary shapes
     // analysis from TDNNS paper for case xx1=0, zz1=xx2=zz2=1 for inner and boundary shapes
     // however, works also when boundary order is not increased.. check
-    enum { incrorder_xx1 = 0};
-    enum { incrorder_zz1 = 1};
-    enum { incrorder_xx2 = 1};
-    enum { incrorder_zz2 = 1};
-    enum { incrorder_xx1_bd = 0};
-    enum { incrorder_zz1_bd = 0};
-    enum { incrorder_xx2_bd = 0};
-    enum { incrorder_zz2_bd = 0};
+  static constexpr int incrorder_xx1 = 0;
+  static constexpr int incrorder_zz1 = 1;
+  static constexpr int incrorder_xx2 = 1;
+  static constexpr int incrorder_zz2 = 1;
+  static constexpr int incrorder_xx1_bd = 0;
+  static constexpr int incrorder_zz1_bd = 0;
+  static constexpr int incrorder_xx2_bd = 0;
+  static constexpr int incrorder_zz2_bd = 0;
     using T_HDivDivFE<ET_PRISM> :: T_HDivDivFE;
 
     virtual void ComputeNDof()
@@ -2042,7 +2050,7 @@ namespace ngfem
       int maxorder_facet =
         max2(order_facet[0][0],max2(order_facet[1][0],order_facet[2][0]));
 
-      const FACE * faces = ElementTopology::GetFaces(ET_PRISM);
+      const FACE * faces = ElementTopology::GetFaces(ET_PRISM).Data();
 
       ArrayMem<AutoDiffDiff<2>,20> ha(maxorder_facet+2);
       ArrayMem<AutoDiffDiff<2>,20> u(order+2), v(order+3);
@@ -2213,7 +2221,7 @@ namespace ngfem
       // int maxorder_facet =
       // max2(order_facet[0][0],max2(order_facet[1][0],order_facet[2][0]));
 
-      const FACE * faces = ElementTopology::GetFaces(ET_PRISM);
+      const FACE * faces = ElementTopology::GetFaces(ET_PRISM).Data();
 
       ArrayMem<AutoDiff<3,T>,20> leg_u(order+2), leg_v(order+3);
       ArrayMem<AutoDiff<3,T>,20> leg_w(order+2);
@@ -2524,7 +2532,91 @@ namespace ngfem
     template <typename MIP, typename TFA>
     void CalcDualShape2 (const MIP & mip, TFA & shape) const
     {
-      throw Exception ("Hdivdivfe not implementend for element type");
+      auto & ip = mip.IP();
+      typedef typename std::remove_const<typename std::remove_reference<decltype(mip.IP()(0))>::type>::type T;
+      T x = ip(0), y = ip(1), z = ip(2);
+      T lam[4] = { x, y, z, 1 - x - y - z };
+      Vec<3, T> pnts[4] = { {1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {0, 0, 0} };
+      int facetnr = ip.FacetNr();
+
+      int ii = 0;
+
+      if (ip.VB() == BND)
+        { // facet shapes
+          for (int i = 0; i < 4; i++)
+            {
+              int p = order_facet[i][0];
+
+              if (i == facetnr)
+                {
+                  IVec<4> fav = ET_trait<ET_TET>::GetFaceSort(i, vnums);
+                  Vec<3, T> adxi = pnts[fav[0]] - pnts[fav[2]];
+                  Vec<3, T> adeta = pnts[fav[1]] - pnts[fav[2]];
+                  T xi = lam[fav[0]];
+                  T eta = lam[fav[1]];
+
+                  Vec<3, T> nvref = Cross(adxi, adeta);
+                  auto nv = Trans(mip.GetJacobianInverse()) * nvref;
+                  auto nn = DyadProd(nv, nv);
+
+                  DubinerBasis::Eval(p, xi, eta, SBLambda([&](size_t nr, T val)
+                                                          {
+                                                            Mat<3, 3, T> mat = nn;
+                                                            mat *= mip.GetMeasure() * val;
+                                                            shape[nr+ii] = mat;
+                                                          }));
+                }
+              ii += (p + 1) * (p + 2) / 2;
+            }
+        }
+      else
+        {
+          for (int i = 0; i < 4; i++)
+            {
+              int p = order_facet[i][0];
+              ii += (p + 1) * (p + 2) / 2;
+            }
+        }
+
+      if (ip.VB() == VOL)
+        {
+          // Use basis from Astrid's PhD thesis'
+          Mat<3, 3, T> S_F1 = lam[0] * Mat<3, 3>({ {-2, 1, 0}, {1, 0, 0}, {0, 0, 0} });
+          Mat<3, 3, T> S_F2 = lam[1] * Mat<3, 3>({ {0, 1, -1}, {1, -2, 1}, {-1, 1, 0} });
+          Mat<3, 3, T> S_F3 = lam[2] * Mat<3, 3>({ {0, 0, 0}, {0, 0, -1}, {0, -1, 2} });
+          Mat<3, 3, T> S_F4 = lam[3] * Mat<3, 3>({ {0, 0, 1}, {0, 0, 0}, {1, 0, 0} });
+          Mat<3, 3, T> S_T1 = Mat<3, 3>({ {0, 0, -1}, {0, 0, 1}, {-1, 1, 0} });
+          Mat<3, 3, T> S_T2 = Mat<3, 3>({ {0, -1, 0}, {-1, 0, 1}, {0, 1, 0} });
+
+          auto p = order_inner[0];
+          auto inv = mip.GetJacobianInverse();
+          auto mapped = [&](const Mat<3, 3, T> & S, T val)
+            {
+              Mat<3, 3, T> mat = Trans(inv) * S * inv;
+              mat *= mip.GetMeasure() * val;
+              return mat;
+            };
+
+          DubinerBasis3D::Eval(p, lam[0], lam[1], lam[2],
+                               SBLambda([&](size_t nr, T val)
+                                        {
+                                          shape[ii++] = mapped(S_T1, val);
+                                          shape[ii++] = mapped(S_T2, val);
+                                        }));
+
+          int p_facet_bubbles = p - 1 + (plus ? 1 : 0);
+          if (p_facet_bubbles >= 0)
+            {
+              DubinerBasis3D::Eval(p_facet_bubbles, lam[0], lam[1], lam[2],
+                                   SBLambda([&](size_t nr, T val)
+                                            {
+                                              shape[ii++] = mapped(S_F1, val);
+                                              shape[ii++] = mapped(S_F2, val);
+                                              shape[ii++] = mapped(S_F3, val);
+                                              shape[ii++] = mapped(S_F4, val);
+                                            }));
+            }
+        }
     }
 
   };
@@ -2578,7 +2670,7 @@ namespace ngfem
       // int maxorder_facet =
       //     max2(order_facet[0][0],max2(order_facet[1][0],order_facet[2][0]));
 
-      const FACE * faces = ElementTopology::GetFaces(ET_HEX);
+      const FACE * faces = ElementTopology::GetFaces(ET_HEX).Data();
 
       ArrayMem<AutoDiff<3,T>,20> leg_u(order+2), leg_v(order+3);
       ArrayMem<AutoDiff<3,T>,20> leg_w(order+2);

@@ -46,7 +46,7 @@ namespace ngla
       }
 
 
-    if (!task_manager)
+    if (!GetTaskManager())
       {
         while (ready.Size())
           {
@@ -69,7 +69,7 @@ namespace ngla
     atomic<int> cnt_final(0);
     SharedLoop sl(Range(ready));
 
-    task_manager -> CreateJob 
+    TaskManager :: CreateJob 
       ([&] (const TaskInfo & ti)
        {
         TPToken ptoken(queue); 
@@ -78,11 +78,12 @@ namespace ngla
         for (int i : sl)
           queue.enqueue (ptoken, ready[i]);
 
+        auto *tm = GetTaskManager();
         while (1)
            {
              if (cnt_final >= num_final) break;
 
-             while (TaskManager::ProcessTask()); // do the nested tasks
+             while (tm->ProcessTask()); // do the nested tasks
              
              int nr;
              if(!queue.try_dequeue_from_producer(ptoken, nr)) 
@@ -137,7 +138,7 @@ namespace ngla
                     shared_ptr<BitArray> ainner,
                     shared_ptr<const Array<int>> acluster,
                     bool allow_refactor)
-    : SparseFactorization (a, ainner, acluster)
+    : BaseSparseCholesky (a, ainner, acluster)
   { 
     static Timer t("SparseCholesky - total");
     static Timer ta("SparseCholesky - allocate");
@@ -973,7 +974,7 @@ namespace ngla
   template <class TM> template<typename T>
   void SparseCholeskyTM<TM> :: FactorSPD1 (T dummy) 
   {
-    if (!task_manager)
+    if (!GetTaskManager())
       {
         RunWithTaskManager ([&] ()
                             {
@@ -2294,6 +2295,17 @@ namespace ngla
   }
 
 
+  shared_ptr<BaseSparseCholesky> BaseSparseCholesky :: Create (shared_ptr<BaseSparseMatrix> a,
+                                                               shared_ptr<BitArray> freedofs,
+                                                               shared_ptr<const Array<int>> cluster,
+                                                               bool allow_refactor)
+  {
+    if (auto ta = dynamic_pointer_cast<SparseMatrix<double>>(a))
+      return make_shared<SparseCholesky<double>> (ta, freedofs, cluster, allow_refactor);
+    if (auto ta = dynamic_pointer_cast<SparseMatrix<Complex>>(a))
+      return make_shared<SparseCholesky<Complex>> (ta, freedofs, cluster, allow_refactor);
+    return nullptr;
+  }
 
 
   static RegisterClassForArchive<SparseCholesky<double>, SparseCholeskyTM<double>> regscd;

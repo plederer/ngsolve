@@ -190,6 +190,7 @@ ANY                  1 1 1 1 | 15
     /// if non-zero, pointer to low order space
     shared_ptr<FESpace> low_order_space; 
     shared_ptr<BaseMatrix> low_order_embedding;
+    shared_ptr<BaseMatrix> low_order_restriction; // used for low-order matrix for AssembleLinearization
       
     /// if directsolverclustered[i] is true, then the unknowns of domain i are clustered
     Array<bool> directsolverclustered;
@@ -550,6 +551,7 @@ ANY                  1 1 1 1 | 15
     const FESpace & LowOrderFESpace () const { return *low_order_space; }
     shared_ptr<FESpace> LowOrderFESpacePtr () const { return low_order_space; }
     shared_ptr<BaseMatrix> LowOrderEmbedding () const { return low_order_embedding; }
+    shared_ptr<BaseMatrix> LowOrderRestriction () const { return low_order_restriction; }    
     
     /// non Dirichlet dofs
     virtual shared_ptr<BitArray> GetFreeDofs (bool external = false) const;
@@ -679,7 +681,11 @@ ANY                  1 1 1 1 | 15
     auto GetTrialFunction() const { return GetProxyFunction(false); }
     auto GetTestFunction() const { return GetProxyFunction(true); }
     
-
+    
+    virtual void Interpolate (const CoefficientFunction & cf, BaseVector & vec,
+                              const Region * reg, LocalHeap & lh);
+    
+    
     virtual shared_ptr<BaseMatrix> GetMassOperator (shared_ptr<CoefficientFunction> rho,
                                                     shared_ptr<Region> defon,
                                                     LocalHeap & lh) const;
@@ -725,25 +731,12 @@ ANY                  1 1 1 1 | 15
     std::list<std::tuple<std::string,double>> Timing () const;
 
 
-    /// get dof-nrs of the element
-    [[deprecated("Use GetDofNrs with element-id instead of elnr!")]]
-    void GetDofNrs (int elnr, Array<DofId> & dnums) const
-      { GetDofNrs(ElementId(VOL,elnr),dnums); }
-
     [[deprecated("Use GetDofNrs with element-id instead of elnr!")]]
     void GetDofNrs (int elnr, Array<DofId> & dnums, COUPLING_TYPE ctype) const;
 
     /// get dofs on nr'th node of type nt.
     [[deprecated("Use GetDofNrs with NodeId instead of nt/nr")]]    
     virtual void GetNodeDofNrs (NODE_TYPE nt, int nr, Array<int> & dnums) const final;
-    /// get number of low-order dofs for node of type nt
-    // virtual int GetNLowOrderNodeDofs ( NODE_TYPE nt ) const;
-    // { return lodofs_per_node[nt]; }
-
-    /// returns dofs of sourface element
-    [[deprecated("Use GetDofNrs(ElementId(BND,elnr)) instead!")]]
-    void GetSDofNrs (int selnr, Array<DofId> & dnums) const
-      { GetDofNrs(ElementId(BND,selnr),dnums); }
 
     /// is the FESpace defined for this sub-domain nr ?
     [[deprecated("Use Definedon(VorB,int) instead")]]
@@ -850,6 +843,12 @@ ANY                  1 1 1 1 | 15
     {
       return integrator[vb];
     }
+
+    virtual void TraverseTree (const function<void(const FESpace&)> & func) const 
+    {
+      func(*this);
+    }
+    
   };
 
 
@@ -1140,6 +1139,14 @@ ANY                  1 1 1 1 | 15
 
     void SetDoSubspaceUpdate(bool _do_subspace_update)
     { do_subspace_update = _do_subspace_update; }
+
+    void TraverseTree (const function<void(const FESpace&)> & func) const override
+    {
+      for (auto space : spaces)
+        space->TraverseTree(func);
+      func(*this);
+    }
+    
   };
 
 

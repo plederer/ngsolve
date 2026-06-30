@@ -10,7 +10,7 @@
 
 // #include <comp.hpp>
 #include "hcurlhdivfes.hpp"
-#include <multigrid.hpp>
+#include <prolongation.hpp>
 
 #include <../fem/hcurllofe.hpp>
 #include <../fem/thcurlfe_impl.hpp>
@@ -41,9 +41,9 @@ namespace ngcomp
     prol = make_shared<EdgeProlongation> (*this);
     order = 1;
 
-    auto one = make_shared<ConstantCoefficientFunction>(1);
-    integrator[VOL] = GetIntegrators().CreateBFI("massedge", ma->GetDimension(), one);
-    integrator[BND] = GetIntegrators().CreateBFI("robinedge", ma->GetDimension(), one);
+    // auto one = make_shared<ConstantCoefficientFunction>(1);
+    // integrator[VOL] = GetIntegrators().CreateBFI("massedge", ma->GetDimension(), one);
+    // integrator[BND] = GetIntegrators().CreateBFI("robinedge", ma->GetDimension(), one);
 
     if (ma->GetDimension() == 2)
       {
@@ -424,7 +424,7 @@ namespace ngcomp
     ELEMENT_TYPE eltype = ngel.GetType();
     
     int ned = ElementTopology::GetNEdges (eltype);
-    const EDGE * edges = ElementTopology::GetEdges (eltype);
+    auto edges = ElementTopology::GetEdges (eltype);
     ArrayMem<int,12> eorient(ned);
     for (int i = 0; i < ned; i++)
       eorient[i] = 
@@ -469,7 +469,7 @@ namespace ngcomp
     ELEMENT_TYPE eltype = ngel.GetType();
     
     int ned = ElementTopology::GetNEdges (eltype);
-    const EDGE * edges = ElementTopology::GetEdges (eltype);
+    auto edges = ElementTopology::GetEdges (eltype);
     ArrayMem<int,12> eorient(ned);
     for (int i = 0; i < ned; i++)
       eorient[i] = 
@@ -897,7 +897,7 @@ namespace ngfem {
       Tx x = ip.x, y = ip.y;
       Tx lami[3] = { x, y, 1-x-y };
       
-      const EDGE * edges = ElementTopology::GetEdges (ET_TRIG);
+      auto edges = ElementTopology::GetEdges (ET_TRIG);
       for (int i = 0; i < 3; i++)
         {
           shape[i] = uDv_minus_vDu (lami[edges[i][0]], lami[edges[i][1]]);
@@ -914,7 +914,7 @@ namespace ngfem {
     {
       Tx lami[4] = { ip.x, ip.y, ip.z, 1-ip.x-ip.y-ip.z };
       
-      const EDGE * edges = ElementTopology::GetEdges (ET_TET);
+      auto edges = ElementTopology::GetEdges (ET_TET);
       for (int i = 0; i < 6; i++)
         {
           shape[i] = uDv_minus_vDu (lami[edges[i][0]], lami[edges[i][1]]);
@@ -1021,7 +1021,7 @@ namespace ngcomp {
       ELEMENT_TYPE eltype = ngel.GetType();
       
       int ned = ElementTopology::GetNEdges (eltype);
-      const EDGE * edges = ElementTopology::GetEdges (eltype);
+      auto edges = ElementTopology::GetEdges (eltype);
       ArrayMem<int,12> eorient(ned);
       for (int i = 0; i < ned; i++)
         eorient[i] = 
@@ -1047,7 +1047,7 @@ namespace ngcomp {
       ELEMENT_TYPE eltype = ngel.GetType();
       
       int ned = ElementTopology::GetNEdges (eltype);
-      const EDGE * edges = ElementTopology::GetEdges (eltype);
+      auto edges = ElementTopology::GetEdges (eltype);
       ArrayMem<int,12> eorient(ned);
       for (int i = 0; i < ned; i++)
         eorient[i] = 
@@ -1286,7 +1286,7 @@ namespace ngcomp {
       {
 	Array<shared_ptr<CoefficientFunction>> coeffs(1);
 	coeffs[0] = shared_ptr<CoefficientFunction> (new ConstantCoefficientFunction(1));
-	integrator[VOL] = GetIntegrators().CreateBFI("massedge", 2, coeffs);
+	// integrator[VOL] = GetIntegrators().CreateBFI("massedge", 2, coeffs);
         evaluator[BND] = make_shared<T_DifferentialOperator<DiffOpIdBoundaryEdge<2>>>();
         evaluator[VOL] = make_shared<T_DifferentialOperator<DiffOpIdEdge<2>>>();
         flux_evaluator[VOL] = make_shared<T_DifferentialOperator<DiffOpCurlEdge<2>>>();        
@@ -1295,8 +1295,8 @@ namespace ngcomp {
       {
 	Array<shared_ptr<CoefficientFunction>> coeffs(1); 
 	coeffs[0] = shared_ptr<CoefficientFunction> (new ConstantCoefficientFunction(1)); 
-	integrator[VOL] = GetIntegrators().CreateBFI("massedge",3,coeffs); 
-	integrator[BND] = GetIntegrators().CreateBFI("robinedge",3,coeffs);
+	// integrator[VOL] = GetIntegrators().CreateBFI("massedge",3,coeffs); 
+	// integrator[BND] = GetIntegrators().CreateBFI("robinedge",3,coeffs);
         
         evaluator[BND] = make_shared<T_DifferentialOperator<DiffOpIdBoundaryEdge<3>>>();
         evaluator[VOL] = make_shared<T_DifferentialOperator<DiffOpIdEdge<3>>>();

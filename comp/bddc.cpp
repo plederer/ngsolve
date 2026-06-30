@@ -49,7 +49,8 @@ namespace ngcomp
     void SetHypre (bool ah = true) { hypre = ah; }
     void SetCoarseGridPreconditioner (bool ah = true) { coarse = ah; }
     
-    BDDCMatrix (shared_ptr<BilinearForm> abfa, 
+    BDDCMatrix (shared_ptr<BilinearForm> abfa,
+                shared_ptr<BitArray> freedofs,
                 Flags flags,
 		const string & ainversetype, 
 		const string & acoarsetype, 
@@ -84,7 +85,7 @@ namespace ngcomp
       Array<int> ifcnt(ma->GetNE()+ma->GetNSE()+ma->GetNCD2E()+bfa->GetSpecialElements().Size());
       wbdcnt = 0;
       ifcnt = 0;
-      const BitArray & freedofs = *fes->GetFreeDofs();
+      // const BitArray & freedofs = *fes->GetFreeDofs();
       
 
       LocalHeap lh(10000, "BDDC-constr, dummy heap");
@@ -98,7 +99,7 @@ namespace ngcomp
              for (auto d : el.GetDofs())
                {
                  if (!IsRegularDof(d)) continue;
-                 if (!freedofs.Test(d)) continue;
+                 if (!freedofs->Test(d)) continue;
                  COUPLING_TYPE ct = fes->GetDofCouplingType(d);
                  if ( ((ct & CONDENSABLE_DOF) != 0) && bfa->UsesEliminateInternal()) continue;
 		
@@ -118,7 +119,7 @@ namespace ngcomp
           el->GetDofNrs(dnums);
           for (auto d : dnums) {
             if (!IsRegularDof(d)) continue;
-            if (!freedofs.Test(d)) continue;
+            if (!freedofs->Test(d)) continue;
             COUPLING_TYPE ct = fes->GetDofCouplingType(d);
             if (((ct & CONDENSABLE_DOF) != 0) && bfa->UsesEliminateInternal())
               continue;
@@ -146,7 +147,7 @@ namespace ngcomp
              for (auto d : el.GetDofs())
                {
                  if (!IsRegularDof(d)) continue;
-                 if (!freedofs.Test(d)) continue;
+                 if (!freedofs->Test(d)) continue;
                  COUPLING_TYPE ct = fes->GetDofCouplingType(d);
                  if ( ((ct & CONDENSABLE_DOF) != 0) && bfa->UsesEliminateInternal()) continue;
 		
@@ -169,7 +170,7 @@ namespace ngcomp
           for (auto d : dnums) {
             if (!IsRegularDof(d))
               continue;
-            if (!freedofs.Test(d))
+            if (!freedofs->Test(d))
               continue;
             COUPLING_TYPE ct = fes->GetDofCouplingType(d);
             if (((ct & CONDENSABLE_DOF) != 0) && bfa->UsesEliminateInternal())
@@ -194,8 +195,11 @@ namespace ngcomp
 	  wb_free_dofs -> SetBit(i);
 
 
+      /*
       if (fes->GetFreeDofs())
 	wb_free_dofs -> And (*fes->GetFreeDofs());
+      */
+      wb_free_dofs -> And (*freedofs);
       
       if (!bfa->SymmetricStorage()) 
 	{
@@ -305,8 +309,7 @@ namespace ngcomp
       if (sizei)
 	{      
           RegionTimer regcompute (timer3);
-          NgProfiler::AddThreadFlops (timer3, TaskManager::GetThreadId(),
-                                      sizei*sizei*sizei + 2*sizei*sizei*sizew);
+          regcompute.AddFlops (sizei*sizei*sizei + 2*sizei*sizei*sizew);
 
           CalcInverse (d);  // , INVERSE_LIB::INV_NGBLA);
           
@@ -629,8 +632,23 @@ namespace ngcomp
       "  preconditioner for wirebasket system, available: 'direct', 'h1amg'";
     docu.Arg("coarseflags") = "{}\n"
       "  flags for coarse preconditioner";
+    docu.Arg("inverse") = "sparsecholesky\n"
+      "  inverse type for the wirebasket system, available: 'sparsecholesky', 'pardiso', 'hypre'";
     
     return docu;    
+  }
+  
+  shared_ptr<Preconditioner> BASE_BDDCPreconditioner :: Create (shared_ptr<BilinearForm> bfa, const Flags & cflags) const
+  {
+    Flags allflags{flags};
+    // allflags += cflags;
+    allflags.Update (cflags); // needs checking
+
+    if (auto bfa_d = dynamic_pointer_cast<T_BilinearForm<double>> (bfa))
+      return make_shared<BDDCPreconditioner<double>> (bfa, allflags);
+    if (auto bfa_c = dynamic_pointer_cast<T_BilinearForm<Complex>> (bfa))
+      return make_shared<BDDCPreconditioner<Complex>> (bfa, allflags);
+    return nullptr;
   }
   
 
@@ -651,7 +669,8 @@ namespace ngcomp
     block = flags.GetDefineFlag("block");
     hypre = flags.GetDefineFlag("usehypre");
     // pre = NULL;
-    fes = bfa->GetFESpace();
+    if (bfa)
+      fes = bfa->GetFESpace();
   }
   
   template <class SCAL, class TV>
@@ -659,7 +678,15 @@ namespace ngcomp
   InitLevel (shared_ptr<BitArray> _freedofs) 
     {
       freedofs = _freedofs;
-      pre = make_shared<BDDCMatrix<SCAL,TV>>(bfa, flags, inversetype, coarsetype, block, hypre);
+      if (additional_dirichlet_constraints)
+        {
+          BitArray dofs = bfa->GetFESpace()->GetDofs(*additional_dirichlet_constraints);
+          dofs.Invert();
+          dofs.And(*freedofs);
+          freedofs = make_shared<BitArray>(std::move(dofs));
+        }
+      
+      pre = make_shared<BDDCMatrix<SCAL,TV>>(bfa, freedofs, flags, inversetype, coarsetype, block, hypre);
       pre -> SetHypre (hypre);
       GetMemoryTracer().Track(*pre, "pre");
     }

@@ -10,12 +10,13 @@
 
 // #include <comp.hpp>
 #include "l2hofespace.hpp"
-#include <multigrid.hpp>
+#include <prolongation.hpp>
 
 #include <l2hofetp.hpp>
 #include <bdbequations.hpp>
 #include <diffop_impl.hpp>
 #include <diagonalmatrix.hpp>
+#include <elementbyelement.hpp>
 
 using namespace ngmg;
 
@@ -78,11 +79,11 @@ namespace ngcomp
   class DiffOpNormal : public DiffOp<DiffOpNormal<D> >
   {
   public:
-    enum { DIM = 1 };
-    enum { DIM_SPACE = D };
-    enum { DIM_ELEMENT = D };
-    enum { DIM_DMAT = D };
-    enum { DIFFORDER = 0 };
+  static constexpr int DIM = 1;
+  static constexpr int DIM_SPACE = D;
+  static constexpr int DIM_ELEMENT = D;
+  static constexpr int DIM_DMAT = D;
+  static constexpr int DIFFORDER = 0;
 
     static string Name() { return "normal"; }
     
@@ -1809,16 +1810,16 @@ global system.
                      [&rho, &vec, fv, def, this] (FESpace::Element el, LocalHeap & lh)
                      {
                        auto tid = TaskManager::GetThreadId();
-                       NgProfiler::StartThreadTimer(tall, tid);
-                       NgProfiler::StartThreadTimer(tel, tid);
+                       RegionTimer rtall(tall);
+                       tel.Start(tid);
 
                        auto & fel = static_cast<const BaseScalarFiniteElement&>(el.GetFE());
-                       NgProfiler::StopThreadTimer(tel, tid);
-                       NgProfiler::AddThreadFlops(tel, tid, 1);
-                       NgProfiler::StartThreadTimer(ttrafo, tid);
+                       tel.Stop(tid);
+                       tel.AddFlops(1);
+                       ttrafo.Start(tid);
                        const ElementTransformation & trafo = el.GetTrafo();
-                       NgProfiler::StopThreadTimer(ttrafo, tid);
-                       NgProfiler::StartThreadTimer(tdofs, tid);
+                       ttrafo.Stop(tid);
+                       tdofs.Start(tid);
 
                        Array<int> dnums(fel.GetNDof(), lh);
                        auto dofrange = GetElementDofs(el.Nr());
@@ -1847,12 +1848,12 @@ global system.
                        else
                          elx = fv.Range(dofrange);
 
-                       NgProfiler::StopThreadTimer(tdofs, tid);
-                       NgProfiler::StartThreadTimer(tgetx, tid);
+                       tdofs.Stop(tid);
+                       tgetx.Start(tid);
 
 		       auto melx = elx.AsMatrix(fel.GetNDof(),dimension);
 
-                       NgProfiler::StopThreadTimer(tgetx, tid);
+                       tgetx.Stop(tid);
 
                        // NgProfiler::StartThreadTimer(tsetup, tid);
                        // NgProfiler::StartTimer (tsetup);
@@ -1868,7 +1869,7 @@ global system.
                        // NgProfiler::StopTimer (tsetup);
                        // tsetup.Stop();
 
-                       NgProfiler::StartThreadTimer(tcalc, tid);
+                       tcalc.Start(tid);
                        if (!curved)
                          {
                            // tcalc1.Start();
@@ -1919,17 +1920,14 @@ global system.
                            // for (int i = 0; i < melx.Height(); i++)
                            // melx.Row(i) /= diag_mass(i);
                          }
-                       NgProfiler::StopThreadTimer(tcalc, tid);
+                       tcalc.Stop(tid);
 
-                       NgProfiler::StartThreadTimer(tsety, tid);
+                       RegionTimer rtsety(tsety);
 
                        if (!lindofs)
                          vec.SetIndirect(dnums, elx);
                        else
                          fv.Range(dofrange) = elx;
-
-                       NgProfiler::StopThreadTimer(tsety, tid);
-                       NgProfiler::StopThreadTimer(tall, tid);
                      });
   }
 
@@ -2191,11 +2189,11 @@ global system.
   class DiffOpSurfaceGradient : public DiffOp<DiffOpSurfaceGradient<D, FEL> >
   {
   public:
-    enum { DIM = 1 };
-    enum { DIM_SPACE = D };
-    enum { DIM_ELEMENT = D-1 };
-    enum { DIM_DMAT = D };
-    enum { DIFFORDER = 1 };
+  static constexpr int DIM = 1;
+  static constexpr int DIM_SPACE = D;
+  static constexpr int DIM_ELEMENT = D-1;
+  static constexpr int DIM_DMAT = D;
+  static constexpr int DIFFORDER = 1;
 
     static const FEL & Cast (const FiniteElement & fel) 
     { return static_cast<const FEL&> (fel); }
@@ -2260,6 +2258,8 @@ global system.
 
     shared_ptr<DifferentialOperator> GetTrace() const override
     { return trace; }
+
+    virtual void CheckElement (const FiniteElement& fel) const override { } // ?????
   };
 
   L2SurfaceHighOrderFESpace ::
@@ -2978,11 +2978,12 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
   class DiffOpIdVectorL2Piola2 : public DiffOp<DiffOpIdVectorL2Piola2<DIM_SPC,VB> >
   {
   public:
-    enum { DIM = 1 };
-    enum { DIM_SPACE = DIM_SPC };
-    enum { DIM_ELEMENT = DIM_SPC-VB };
-    enum { DIM_DMAT = DIM_SPC };
-    enum { DIFFORDER = 0 };
+    static constexpr int DIM = 1;
+    static constexpr int DIM_SPACE = DIM_SPC;
+    static constexpr int DIM_ELEMENT = DIM_SPC-VB;
+    static constexpr int DIM_DMAT = DIM_SPC;
+    static constexpr int DIFFORDER = 0;
+    using FiniteElementType = VectorFiniteElement;
 
     template <typename FEL, typename MIP, typename MAT>
     static void GenerateMatrix (const FEL & bfel, const MIP & mip,
@@ -3032,11 +3033,12 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
   class DiffOpIdVectorL2Piola : public DiffOp<DiffOpIdVectorL2Piola<DIM_SPC,VB> >
   {
   public:
-    enum { DIM = 1 };
-    enum { DIM_SPACE = DIM_SPC };
-    enum { DIM_ELEMENT = DIM_SPC-VB };
-    enum { DIM_DMAT = DIM_SPC };
-    enum { DIFFORDER = 0 };
+    static constexpr int DIM = 1;
+    static constexpr int DIM_SPACE = DIM_SPC;
+    static constexpr int DIM_ELEMENT = DIM_SPC-VB;
+    static constexpr int DIM_DMAT = DIM_SPC;
+    static constexpr int DIFFORDER = 0;
+    using FiniteElementType = VectorFiniteElement;
 
 
     static int DimRef() { return DIM_ELEMENT; } 
@@ -3260,11 +3262,12 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
   class DiffOpDivVectorL2Piola : public DiffOp<DiffOpDivVectorL2Piola<DIM_SPC>>
   {
   public:
-    enum { DIM = 1 };
-    enum { DIM_SPACE = DIM_SPC };
-    enum { DIM_ELEMENT = DIM_SPC };
-    enum { DIM_DMAT = 1 };
-    enum { DIFFORDER = 1 };
+    static constexpr int DIM = 1;
+    static constexpr int DIM_SPACE = DIM_SPC;
+    static constexpr int DIM_ELEMENT = DIM_SPC;
+    static constexpr int DIM_DMAT = 1;
+    static constexpr int DIFFORDER = 1;
+    using FiniteElementType = VectorFiniteElement;
 
     static string Name() { return "div"; }
 
@@ -3383,6 +3386,7 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
     static constexpr int DIM_ELEMENT = DIM_SPC;
     static constexpr int DIM_DMAT = DIM_SPC*DIM_SPC;
     static constexpr int DIFFORDER = 1;
+    using FiniteElementType = VectorFiniteElement;
 
     static string Name() { return "grad"; }
 
@@ -3643,11 +3647,12 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
   class DiffOpIdVectorL2Covariant : public DiffOp<DiffOpIdVectorL2Covariant<DIM_SPC> >
   {
   public:
-    enum { DIM = 1 };
-    enum { DIM_SPACE = DIM_SPC };
-    enum { DIM_ELEMENT = DIM_SPC-VB };
-    enum { DIM_DMAT = DIM_SPC };
-    enum { DIFFORDER = 0 };
+    static constexpr int DIM = 1;
+    static constexpr int DIM_SPACE = DIM_SPC;
+    static constexpr int DIM_ELEMENT = DIM_SPC-VB;
+    static constexpr int DIM_DMAT = DIM_SPC;
+    static constexpr int DIFFORDER = 0;
+    using FiniteElementType = VectorFiniteElement;
 
     template <typename FEL, typename MIP, typename MAT>
     static void GenerateMatrix (const FEL & bfel, const MIP & mip,
@@ -3758,11 +3763,12 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
   class DiffOpCurlVectorL2Covariant : public DiffOp<DiffOpCurlVectorL2Covariant>
   {
   public:
-    enum { DIM = 3 };
-    enum { DIM_SPACE = 3 };
-    enum { DIM_ELEMENT = 3 };
-    enum { DIM_DMAT = 3 };
-    enum { DIFFORDER = 1 };
+    static constexpr int DIM = 3;
+    static constexpr int DIM_SPACE = 3;
+    static constexpr int DIM_ELEMENT = 3;
+    static constexpr int DIM_DMAT = 3;
+    static constexpr int DIFFORDER = 1;
+    using FiniteElementType = VectorFiniteElement;
 
     static string Name() { return "curl"; }
 

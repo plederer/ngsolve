@@ -1013,6 +1013,8 @@ void NGS_DLL_HEADER ExportNgla(py::module &m) {
         new (instance) BaseMatrixTrampoline(); }
         )
     */
+    .def_static("GetDefaultInverseType", &BaseMatrix::GetDefaultInverseType)
+    .def_static("SetDefaultInverseType", &BaseMatrix::SetDefaultInverseType, py::arg("type"))
     .def(py::init<> ())
     .def(py::init<>([] (shared_ptr<BaseVector> vec)
                     { return make_shared<BaseMatrixFromVector> (vec); }))
@@ -1087,11 +1089,8 @@ void NGS_DLL_HEADER ExportNgla(py::module &m) {
         m.AsVector()+=m2.AsVector();
       }, py::arg("mat"), py::call_guard<py::gil_scoped_release>())
 
-    .def("GetInverseType", [](BM & m)
-                                            {
-                                              return GetInverseName( m.GetInverseType());
-                                            })
-
+    .def("GetInverseType", &BM::GetInverseType)
+    .def("SetInverseType", &BM::SetInverseType)
     .def("Inverse", [](BM &m, shared_ptr<BitArray> freedofs,
                        std::variant<std::monostate,string,py::object> inverse, const Flags & flags)
     {
@@ -1529,13 +1528,36 @@ inverse : string
     (m, "SymmetricGaussSeidelPreconditioner");
   
   py::class_<SparseFactorization, shared_ptr<SparseFactorization>, BaseMatrix>
-    (m, "SparseFactorization")
+    sparse_fact_cls(m, "SparseFactorization");
+  sparse_fact_cls
     .def("Smooth", [] (SparseFactorization & self, BaseVector & u, BaseVector & y)
          {
            self.Smooth (u, y /* this is not needed */, y);
          }, py::call_guard<py::gil_scoped_release>(),
          "perform smoothing step (needs non-symmetric storage so symmetric sparse matrix)")
     ;
+
+  {
+    struct CreatorClass {
+      py::object cls;
+      py::kwargs kwargs;
+    };
+    
+    py::class_<CreatorClass> (m, "SparseFactorizationCreator")
+      .def("__call__", [](CreatorClass & c, shared_ptr<BaseMatrix> mat, shared_ptr<BitArray> freedofs) {
+        return c.cls.attr("Create")(mat, freedofs);
+      });
+    
+    auto creator = py::cpp_function ([](py::object cls, py::kwargs kwargs) {
+      return CreatorClass { cls, kwargs };
+    });
+
+    
+    sparse_fact_cls.attr("Creator") =
+      py::reinterpret_borrow<py::object>(PyClassMethod_New(creator.ptr()));
+  }
+
+  
 
   class SparseFactorizationInterfaceTrampoline
       : public SparseFactorizationInterface,
@@ -1583,6 +1605,7 @@ inverse : string
       .def("Analyze", &SparseFactorizationInterface::Analyze)
       .def("Factor", &SparseFactorizationInterface::Factor)
       .def_property_readonly("is_symmetric_storage", &SparseFactorizationInterface::IsSymmetricStorage)
+      .def_property_readonly("is_symmetric", &SparseFactorizationInterface::IsSymmetric)
       ;
 
   m.def("RegisterInverseType", [](const string &name, py::object creator) {
@@ -1598,12 +1621,23 @@ inverse : string
         });
   });
 
+  m.def("IsMatrixSymmetric", IsMatrixSymmetric, py::arg("mat"), py::arg("tol")=0.0, "Check if sparse matrix is symmetric with given tolerance");
+  m.def("ExtractTri", ExtractTri, py::arg("mat"), py::arg("lower")=true, "Extract lower or upper triangular part of matrix");
+
+  
+  py::class_<BaseSparseCholesky, shared_ptr<BaseSparseCholesky>, SparseFactorization> (m, "SparseCholesky")
+    .def_static("Create", [](shared_ptr<BaseSparseMatrix> mat, shared_ptr<BitArray> freedofs) {
+      return BaseSparseCholesky::Create(mat, freedofs);
+    });
+
+  
   py::class_<SparseCholesky<double>, shared_ptr<SparseCholesky<double>>, SparseFactorization> (m, "SparseCholesky_d")
-    .def(NGSPickle<SparseCholesky<double>>())
-    ;
+    .def(NGSPickle<SparseCholesky<double>>());
+
   py::class_<SparseCholesky<Complex>, shared_ptr<SparseCholesky<Complex>>, SparseFactorization> (m, "SparseCholesky_c")
-    .def(NGSPickle<SparseCholesky<Complex>>())
-    ;
+    .def(NGSPickle<SparseCholesky<Complex>>());
+
+  
   
   py::class_<Projector, shared_ptr<Projector>, BaseMatrix> (m, "Projector")
     .def(py::init<shared_ptr<BitArray>,bool>(),
@@ -1950,17 +1984,20 @@ shift : object
                                            mat.DoArchive(*arch); return arch; });
 
   m.def("GetAvailableSolvers", []() {
-    py::list solvers;
+    py::set solvers;
     if(is_pardiso_available)
-      solvers.append(GetInverseName(PARDISO));
+      solvers.add("pardiso");
 #ifdef USE_MUMPS
-    solvers.append(GetInverseName(MUMPS));
+    solvers.add("mumps");
 #endif // USE_MUMPS
 #ifdef USE_UMFPACK
-    solvers.append(GetInverseName(UMFPACK));
+    solvers.add("umfpack");
 #endif // USE_UMFPACK
-    solvers.append(GetInverseName(SPARSECHOLESKY));
-    return solvers;
+    solvers.add("sparsecholesky");
+    for(auto i : Range(BaseMatrix::invcreators.Size())){
+        solvers.add(BaseMatrix::invcreators.GetName(i));
+    }
+    return py::list(solvers);
   });
 }
 

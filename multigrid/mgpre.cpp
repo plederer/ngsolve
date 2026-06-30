@@ -122,9 +122,17 @@ namespace ngmg
 	    */
 
             bool condense = biform->UsesEliminateInternal();
-	    shared_ptr<BitArray> freedofs = biform->GetFESpace()->GetFreeDofs(condense);
-            *testout << "freedofs for coarse, condense = " << int(condense) << endl
-                     << *freedofs << endl;
+            shared_ptr<BitArray> freedofs = biform->GetFESpace()->GetFreeDofs(condense);
+            auto additional_dirichlet_constraints = smoother -> GetAdditionalDirichletConstraints();
+            if (additional_dirichlet_constraints)
+              {
+                BitArray dofs = biform->GetFESpace()->GetDofs(*additional_dirichlet_constraints);
+                dofs.Invert();
+                dofs.And(*freedofs);
+                freedofs = make_shared<BitArray>(std::move(dofs));
+              }
+            
+
 	    if (!freedofs)
 	      coarsegridpre =
 		dynamic_cast<const BaseSparseMatrix&> (biform->GetMatrix(0)) .InverseMatrix();
@@ -336,11 +344,6 @@ namespace ngmg
     auto cw = cpre->CreateColVector();
     auto res = CreateColVector();
 
-    /*
-    cout << "type = " << typeid(cres).name() << endl;
-    cout << "type = " << typeid(cw).name() << endl;
-    cout << "type = " << typeid(res).name() << endl;
-    */
     u = 0;
 
       {
@@ -371,10 +374,6 @@ namespace ngmg
 
         smoother->PostSmooth (level, u, f, smoothingsteps);
       }
-
-      // delete res;
-      // delete cw;
-      // delete cres;
   }
 
   ostream & TwoLevelMatrix :: Print (ostream & s) const

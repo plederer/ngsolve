@@ -10,7 +10,7 @@
 #include "../fem/hcurllofe.hpp"
 #include <../fem/hcurl_equations.hpp>
 #include <../fem/diffop_impl.hpp>
-#include <multigrid.hpp>
+#include <prolongation.hpp>
 
 
 namespace ngcomp
@@ -22,11 +22,11 @@ namespace ngcomp
   class DiffOpTangentialComponentHCurl: public DiffOp<DiffOpTangentialComponentHCurl<D> >
   {
   public:
-    enum { DIM = 1 };
-    enum { DIM_SPACE = D };
-    enum { DIM_ELEMENT = D };
-    enum { DIM_DMAT = D };
-    enum { DIFFORDER = 0 };
+  static constexpr int DIM = 1;
+  static constexpr int DIM_SPACE = D;
+  static constexpr int DIM_ELEMENT = D;
+  static constexpr int DIM_DMAT = D;
+  static constexpr int DIFFORDER = 0;
 
     static Array<int> GetDimensions() { return Array<int> ({D}); }
 
@@ -460,7 +460,7 @@ namespace ngcomp
     // Array<CoefficientFunction*> coeffs(1);
     // coeffs[0] = &one;
     // evaluator = GetIntegrators().CreateBFI("massvectorfacet", 2, coeffs);
-    integrator[BND] = GetIntegrators().CreateBFI("robinvectorfacet", ma->GetDimension(), &one); 
+    // integrator[BND] = GetIntegrators().CreateBFI("robinvectorfacet", ma->GetDimension(), &one); 
 
     highest_order_dc = flags.GetDefineFlag("highest_order_dc");
     if (highest_order_dc) {
@@ -570,7 +570,7 @@ namespace ngcomp
 	    
 		if(var_order)
 		  {
-		    const EDGE * edges = ElementTopology::GetEdges (eltype);
+		    const EDGE * edges = ElementTopology::GetEdges (eltype).Data();
 		    for(int j=0; j<fanums.Size(); j++)
 		      for(int k=0;k<2;k++)
 			if(points[edges[j][0]][k] != points[edges[j][1]][k])
@@ -588,7 +588,7 @@ namespace ngcomp
 		if(var_order) 
 		  {
 		    auto vnums = ma->GetElVertices (ei);
-		    const FACE * faces = ElementTopology::GetFaces (eltype);
+		    const FACE * faces = ElementTopology::GetFaces (eltype).Data();
 		    for(int j=0;j<elfaces.Size();j++)
 		      {
 			if(faces[j][3]==-1) // trig  

@@ -127,6 +127,8 @@ namespace ngfem
     order_inner = oi;
   }
   */
+
+
   
   //------------------------------------------------------------------------
   // HDivHighOrderNormalSegm
@@ -1037,7 +1039,7 @@ namespace ngfem
     shape = 0.0;
 
 
-    const FACE * faces = ElementTopology::GetFaces (ET_PRISM);
+    const FACE * faces = ElementTopology::GetFaces (ET_PRISM).Data();
     // const EDGE * edges = ElementTopology::GetEdges (ET_PRISM);
 
 
@@ -1674,7 +1676,7 @@ namespace ngfem
     can(4,1) = 1.;
     can(5,0) = -1.;
 
-    const FACE * faces = ElementTopology::GetFaces (ET_HEX);
+    const FACE * faces = ElementTopology::GetFaces (ET_HEX).Data();
 
 
     shape = 0.0;

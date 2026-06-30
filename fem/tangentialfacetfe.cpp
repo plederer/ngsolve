@@ -235,7 +235,20 @@ namespace ngfem
   void TangentialFacetFacetFE<ET_SEGM>::CalcDualShape2 (const MIP & mip,
                                                         TFA & shape) const
   {
-    throw Exception("TangentialFacetFacetFE<ET_SEGM>::CalcDualShape2 not implemented");
+    typedef typename std::remove_const<typename std::remove_reference<decltype(mip.IP()(0))>::type>::type T;        
+    auto & ip = mip.IP();
+    T x = ip(0);
+    if ( vnums[0] > vnums[1]) x = 1-x;
+    auto xi = 2*x-1;
+
+    Vec<2,T> tau = mip.GetJacobian().Col(0);
+    tau /= mip.GetMeasure();
+
+    LegendrePolynomial(order, xi, 
+		       SBLambda([&] (size_t i, auto val)
+                       {
+                         shape[i] = val*tau;
+                       }));
   }
   
   template<>
@@ -484,7 +497,7 @@ namespace ngfem
 
     AutoDiff<2> x(ip(0), 0), y(ip(1),1);
 
-    const EDGE * edges = ElementTopology :: GetEdges (ET_TRIG);
+    auto edges = ElementTopology :: GetEdges (ET_TRIG);
 
     int  fav[2] = {edges[fanr][0], edges[fanr][1] };
     int j1 = 0; 
@@ -531,7 +544,7 @@ namespace ngfem
 
     AutoDiff<2> x(ip(0), 0), y(ip(1),1);
 
-    const EDGE * faces = ElementTopology :: GetEdges (ET_QUAD);
+    auto faces = ElementTopology :: GetEdges (ET_QUAD);
 
     int  fav[2] = {faces[fanr][0], faces[fanr][1] };
     int j1 = 0; 
@@ -565,7 +578,7 @@ namespace ngfem
 
     AutoDiff<2> x(ip(0), 0), y(ip(1),1);
 
-    const EDGE * faces = ElementTopology :: GetEdges (ET_QUAD);
+    auto faces = ElementTopology :: GetEdges (ET_QUAD);
 
     int  fav[2] = {faces[fanr][0], faces[fanr][1] };
     int j1 = 0; 
@@ -1207,10 +1220,11 @@ namespace ngfem
   template class TangentialFacetVolumeFE<ET_PYRAMID>;
   template class TangentialFacetVolumeFE<ET_HEX>;
 
-  static RegisterBilinearFormIntegrator<RobinEdgeIntegrator<3 /* , TangentialFacetFacetFiniteElement<2> */ >  > initrvf3 ("robinvectorfacet", 3, 1);
-  static RegisterBilinearFormIntegrator<RobinEdgeIntegrator<2 /* , TangentialFacetFacetFiniteElement<1> */ >  > initrvf2 ("robinvectorfacet", 2, 1);
-  static RegisterLinearFormIntegrator<NeumannEdgeIntegrator<3 /*, TangentialFacetFacetFiniteElement<2> */ >  > initnvf3 ("neumannvectorfacet", 3, 1);
-  static RegisterLinearFormIntegrator<NeumannEdgeIntegrator<2 /*, TangentialFacetFacetFiniteElement<1> */ >  > initnvf2 ("neumannvectorfacet", 2, 1);
+
+  // static RegisterBilinearFormIntegrator<RobinEdgeIntegrator<3 /* , TangentialFacetFacetFiniteElement<2> */ >  > initrvf3 ("robinvectorfacet", 3, 1);
+  // static RegisterBilinearFormIntegrator<RobinEdgeIntegrator<2 /* , TangentialFacetFacetFiniteElement<1> */ >  > initrvf2 ("robinvectorfacet", 2, 1);
+  // static RegisterLinearFormIntegrator<NeumannEdgeIntegrator<3 /*, TangentialFacetFacetFiniteElement<2> */ >  > initnvf3 ("neumannvectorfacet", 3, 1);
+  // static RegisterLinearFormIntegrator<NeumannEdgeIntegrator<2 /*, TangentialFacetFacetFiniteElement<1> */ >  > initnvf2 ("neumannvectorfacet", 2, 1);
 }
 
 

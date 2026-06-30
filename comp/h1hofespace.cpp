@@ -10,7 +10,7 @@
 
 // #include <comp.hpp>
 #include <h1hofespace.hpp>
-#include <multigrid.hpp> 
+#include <prolongation.hpp> 
 #include "../fem/h1hofe.hpp"
 #include "../fem/h1hofefo.hpp"
 #include <../fem/hdivhofe.hpp>
@@ -651,8 +651,8 @@ into the wirebasket.
 	      int i = el.Nr();
           
 	      ELEMENT_TYPE eltype = el.GetType(); 
-	      const FACE * faces = ElementTopology::GetFaces (eltype);
-	      const EDGE * edges = ElementTopology::GetEdges (eltype);
+	      auto faces = ElementTopology::GetFaces (eltype);
+	      auto edges = ElementTopology::GetEdges (eltype);
 	      const POINT3D * points = ElementTopology :: GetVertices (eltype);
 
 	      auto vnums = el.Vertices();
@@ -797,10 +797,17 @@ into the wirebasket.
     UpdateCouplingDofArray ();
 
     if (low_order_space)
-      low_order_embedding =
-        make_shared<Embedding> (GetNDof(),
-                                IntRange(low_order_space->GetNDof()),
-                                IsComplex());
+      {
+        low_order_embedding =
+          make_shared<Embedding> (GetNDof(),
+                                  IntRange(low_order_space->GetNDof()),
+                                  IsComplex());
+        low_order_restriction =
+          make_shared<EmbeddingTranspose> (GetNDof(),
+                                           IntRange(low_order_space->GetNDof()),
+                                           IsComplex());
+      }
+          
     // timer3.Stop();
 
     /*
@@ -1502,7 +1509,18 @@ into the wirebasket.
     cout << IM(4) << " blocktype " << smoothing_type << endl;
     // cout << " Use H1-Block Smoother:  "; 
 
-    FilteredTableCreator creator(GetFreeDofs().get());
+    auto freedofs = GetFreeDofs();
+    if (precflags.AnyFlagDefined("additional_dirichlet_constraints"))
+      {
+        Region reg = std::any_cast<Region>(precflags.GetAnyFlag("additional_dirichlet_constraints"));
+        BitArray dofs = GetDofs(reg);
+        dofs.Invert();
+        dofs.And(*freedofs);
+        freedofs = make_shared<BitArray>(std::move(dofs));
+      }
+    
+    
+    FilteredTableCreator creator(freedofs.get());
     for ( ; !creator.Done(); creator++)
       {
 	switch (smoothing_type)

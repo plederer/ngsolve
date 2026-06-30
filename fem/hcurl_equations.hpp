@@ -43,7 +43,8 @@ namespace ngfem
     static constexpr int DIM_ELEMENT = D;
     static constexpr int DIM_DMAT = D;
     static constexpr int DIFFORDER = 0;
-
+    using FiniteElementType = FEL;
+    
     static const FEL & Cast (const FiniteElement & fel) 
     { return static_cast<const FEL&> (fel); }
     
@@ -54,7 +55,7 @@ namespace ngfem
 				MAT && mat, LocalHeap & lh)
     {
       // GenerateMatrix2 (fel, mip, SliceIfPossible<double> (Trans(mat)), lh);
-      GenerateMatrix2 (fel, mip, make_BareSliceMatrix (Trans(mat)), lh);
+      GenerateMatrix2 (fel, mip, AsBareSliceMatrix (Trans(mat)), lh);
     }
 
     template <typename AFEL, typename MIP, typename MAT>
@@ -225,7 +226,8 @@ namespace ngfem
     static constexpr int DIM_ELEMENT = 2;
     static constexpr int DIM_DMAT = 1;
     static constexpr int DIFFORDER = 1;
-
+    using FiniteElementType = FEL;
+    
     static string Name() { return "curl"; }
 
     static constexpr bool SUPPORT_PML = true;
@@ -290,7 +292,8 @@ namespace ngfem
     static constexpr int DIM_ELEMENT = 3;
     static constexpr int DIM_DMAT = 3;
     static constexpr int DIFFORDER = 1;
-
+    using FiniteElementType = FEL;
+    
     static string Name() { return "curl"; }
 
     static constexpr bool SUPPORT_PML = true;
@@ -302,7 +305,7 @@ namespace ngfem
 				MAT && mat, LocalHeap & lh)
     {
       // GenerateMatrix2 (fel, mip, SliceIfPossible<double> (Trans(mat)), lh);
-      GenerateMatrix2 (fel, mip, make_BareSliceMatrix (Trans(mat)), lh);
+      GenerateMatrix2 (fel, mip, AsBareSliceMatrix (Trans(mat)), lh);
     }
 
     template <typename AFEL, typename MIP, typename MAT>
@@ -445,7 +448,8 @@ namespace ngfem
     static constexpr int DIM_DMAT = D;
     static constexpr int DIFFORDER = 0;
     static constexpr bool SUPPORT_PML = true;
-
+    using FiniteElementType = FEL;
+    
     template <typename FEL1, typename MIP, typename MAT>
     static void GenerateMatrix (const FEL1 & fel, const MIP & mip,
 				MAT && mat, LocalHeap & lh)
@@ -524,14 +528,16 @@ namespace ngfem
     static constexpr int DIM_ELEMENT = D-1;
     static constexpr int DIM_DMAT = D;
     static constexpr int DIFFORDER = 0;
-
+    using FiniteElementType = FEL;
+    
     static constexpr bool SUPPORT_PML = true;
     template <typename FEL1, typename MIP, typename MAT>
     static void GenerateMatrix (const FEL1 & fel, const MIP & mip,
 				MAT && mat, LocalHeap & lh)
     {
       // GenerateMatrix2 (fel, mip, SliceIfPossible<double> (Trans(mat)), lh);
-      GenerateMatrix2 (fel, mip, make_BareSliceMatrix (Trans(mat)), lh);
+      // GenerateMatrix2 (fel, mip, AsBareSliceMatrix (Trans(mat)), lh);
+      GenerateMatrix2 (fel, mip, AsBareSliceMatrix (Trans(mat)), lh);
     }
 
     template <typename AFEL, typename MIP, typename MAT>
@@ -661,7 +667,8 @@ namespace ngfem
     static constexpr int DIM_ELEMENT = 2;
     static constexpr int DIM_DMAT = 1;
     static constexpr int DIFFORDER = 1;
-
+    using FiniteElementType = FEL;
+    
     static string Name() { return "curl"; }
 
     static const FEL & Cast(const FiniteElement & fel)
@@ -829,11 +836,12 @@ public:
   {
   public:
     typedef DiffOp<DiffOpHCurlDual<D>> BASE;
-    enum { DIM = 1 };
-    enum { DIM_SPACE = D };
-    enum { DIM_ELEMENT = D };
-    enum { DIM_DMAT = D };
-    enum { DIFFORDER = 0 };
+  static constexpr int DIM = 1;
+  static constexpr int DIM_SPACE = D;
+  static constexpr int DIM_ELEMENT = D;
+  static constexpr int DIM_DMAT = D;
+  static constexpr int DIFFORDER = 0;
+  using FiniteElementType = HCurlFiniteElement<D>;
 
     typedef DiffOpHCurlDualBoundary<D> DIFFOP_TRACE;
 
@@ -886,11 +894,12 @@ public:
   {
   public:
     typedef DiffOp<DiffOpHCurlDualBoundary<D>> BASE;
-    enum { DIM = 1 };
-    enum { DIM_SPACE = D };
-    enum { DIM_ELEMENT = D-1 };
-    enum { DIM_DMAT = D };
-    enum { DIFFORDER = 0 };
+  static constexpr int DIM = 1;
+  static constexpr int DIM_SPACE = D;
+  static constexpr int DIM_ELEMENT = D-1;
+  static constexpr int DIM_DMAT = D;
+  static constexpr int DIFFORDER = 0;
+  using FiniteElementType = HCurlFiniteElement<D-1>;
 
     typedef void DIFFOP_TRACE;
 
